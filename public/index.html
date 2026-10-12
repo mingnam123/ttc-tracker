@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTC Live Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+  html, body, #map { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+  #panel { position: absolute; top: 12px; left: 12px; z-index: 1; background: rgba(20,24,30,.92);
+           color: #fff; padding: 12px; border-radius: 10px; width: 230px; font-size: 13px; }
+  #panel h1 { font-size: 15px; margin: 0 0 8px; }
+  #panel input, #panel select, #panel button { width: 100%; box-sizing: border-box; margin-top: 6px;
+           padding: 6px; border-radius: 6px; border: 0; font-size: 13px; }
+  #panel button { background: #da291c; color: #fff; cursor: pointer; }
+  #stat, #rname { margin-top: 8px; color: #aab; }
+  #rname { color: #fff; font-weight: 600; }
+  #legend div { margin-top: 3px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>TTC Live Tracker</h1>
+  <input id="route" list="routes" placeholder="Route (e.g. 504, 29)">
+  <datalist id="routes"></datalist>
+  <select id="color">
+    <option value="type">Colour: vehicle type</option>
+    <option value="delay">Colour: delay</option>
+    <option value="crowd">Colour: crowding</option>
+  </select>
+  <button id="mode">Switch to 3D</button>
+  <div id="rname"></div>
+  <div id="stat">Loading…</div>
+  <div id="legend" style="margin-top:8px"></div>
+</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const POLL_MS = 15000;
+const GREY = '#8a8f98';
+const PALETTES = {
+  type: [['Streetcar', '#da291c'], ['Bus', '#2b8cff'], ['Other', '#b0a0d0']],
+  delay: [['Early (>1 min)', '#4aa8ff'], ['On time (≤2 min late)', '#2fbf71'], ['2–5 min late', '#f5a623'], ['>5 min late', '#e5392b'], ['No data', GREY]],
+  crowd: [['Empty / many seats', '#2fbf71'], ['Few seats', '#e6d44a'], ['Standing room', '#f5a623'], ['Crushed / full', '#e5392b'], ['No data', GREY]],
+};
+
+const map = new maplibregl.Map({
+  container: 'map', style: 'https://tiles.openfreemap.org/styles/liberty',
+  center: [-79.38, 43.70], zoom: 11,
+});
+map.addControl(new maplibregl.NavigationControl());
+
+let routes = {}, byShort = {};
+const vehicles = new Map(); // id -> {from,to,cur,bearing,route,speed,delay,occ,kind}
+let t0 = performance.now(), lastUpdated = null, filter = '', colorMode = 'type', is3D = false, ready = false, hasStatic = false;
+
+const lerp = (a, b, t) => a + (b - a) * t;
+const info = r => routes[r] || byShort[String(r).toLowerCase()] || null;
+const matches = v => !filter || String(v.route).toLowerCase() === filter || info(v.route)?.s.toLowerCase() === filter;
+const kindOf = r => { const t = info(r)?.t; return t === '0' ? 'streetcar' : t === '3' || t == null ? 'bus' : 'other'; };
+
+function colorOf(v) {
+  if (colorMode === 'delay') {
+    const d = v.delay;
+    if (d == null) return GREY;
+    return d < -60 ? '#4aa8ff' : d <= 120 ? '#2fbf71' : d <= 300 ? '#f5a623' : '#e5392b';
+  }
+  if (colorMode === 'crowd') {
+    const o = v.occ;
+    if (o == null || o > 5) return GREY;
+    return o <= 1 ? '#2fbf71' : o === 2 ? '#e6d44a' : o === 3 ? '#f5a623' : '#e5392b';
+  }
+  return v.kind === 'streetcar' ? '#da291c' : v.kind === 'bus' ? '#2b8cff' : '#b0a0d0';
+}
+
+function renderLegend() {
+  document.getElementById('legend').innerHTML = PALETTES[colorMode]
+    .map(([l, c]) => `<div><span class="dot" style="background:${c}"></span>${l}</div>`).join('');
+}
+
+async function refresh() {
+  try {
+    const data = await (await fetch('/api/vehicles')).json();
+    if (!data.updated || data.updated === lastUpdated) return;
+    lastUpdated = data.updated;
+    const seen = new Set();
+    for (const v of data.vehicles) {
+      seen.add(v.id);
+      const pos = [v.lon, v.lat], prev = vehicles.get(v.id);
+      vehicles.set(v.id, {
+        from: prev ? prev.cur : pos, to: pos, cur: prev ? prev.cur : pos,
+        bearing: v.bearing, route: v.route, speed: v.speed, delay: v.delay, occ: v.occ, kind: kindOf(v.route),
+      });
+    }
+    for (const id of vehicles.keys()) if (!seen.has(id)) vehicles.delete(id);
+    t0 = performance.now();
+  } catch (e) { document.getElementById('stat').textContent = 'Feed error – retrying'; }
+}
+
+function render() {
+  if (ready) {
+    const t = Math.min((performance.now() - t0) / POLL_MS, 1), features = [];
+    for (const [id, v] of vehicles) {
+      if (!matches(v)) continue;
+      v.cur = [lerp(v.from[0], v.to[0], t), lerp(v.from[1], v.to[1], t)];
+      const i = info(v.route);
+      features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: v.cur },
+        properties: { id, route: i?.s ?? v.route, name: i?.l ?? '', bearing: v.bearing, speed: v.speed,
+                      delay: v.delay, color: colorOf(v) } });
+    }
+    map.getSource('veh').setData({ type: 'FeatureCollection', features });
+    document.getElementById('stat').textContent =
+      `${features.length} vehicles · updated ${lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '—'}`;
+  }
+  setTimeout(render, 100);
+}
+
+function addArrow() {
+  const s = 48, c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.beginPath();
+  g.moveTo(s / 2, 3); g.lineTo(s - 8, s - 6); g.lineTo(s / 2, s - 15); g.lineTo(8, s - 6); g.closePath(); g.fill();
+  map.addImage('arrow', g.getImageData(0, 0, s, s), { sdf: true });
+}
+
+async function loadStatic() {
+  try {
+    const [r, sh, st] = await Promise.all(['routes.json', 'shapes.geojson', 'stops.geojson']
+      .map(f => fetch('/data/' + f).then(x => { if (!x.ok) throw new Error(f); return x.json(); })));
+    routes = r;
+    for (const k in r) byShort[r[k].s.toLowerCase()] = r[k];
+    const dl = document.getElementById('routes');
+    Object.values(r).sort((a, b) => parseInt(a.s) - parseInt(b.s) || a.s.localeCompare(b.s))
+      .forEach(x => dl.insertAdjacentHTML('beforeend', `<option value="${x.s}">${x.l}</option>`));
+    map.addSource('lines', { type: 'geojson', data: sh });
+    map.addSource('stops', { type: 'geojson', data: st });
+    const lc = ['match', ['get', 't'], '0', '#da291c', '3', '#2b8cff', '#b0a0d0'];
+    map.addLayer({ id: 'lines', type: 'line', source: 'lines', paint: { 'line-color': lc, 'line-width': 1, 'line-opacity': 0.35 } });
+    map.addLayer({ id: 'lines-hi', type: 'line', source: 'lines', filter: ['==', ['get', 'id'], ''],
+      paint: { 'line-color': lc, 'line-width': 4, 'line-opacity': 0.9 } });
+    map.addLayer({ id: 'stops', type: 'circle', source: 'stops', minzoom: 14,
+      paint: { 'circle-radius': 2.5, 'circle-color': '#fff', 'circle-stroke-color': '#444', 'circle-stroke-width': 1 } });
+    map.addLayer({ id: 'stop-names', type: 'symbol', source: 'stops', minzoom: 15.5,
+      layout: { 'text-field': ['get', 'n'], 'text-size': 11, 'text-offset': [0, 1], 'text-font': ['Noto Sans Regular'] },
+      paint: { 'text-color': '#222', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } });
+    hasStatic = true;
+  } catch (e) {
+    document.getElementById('rname').textContent = 'Run "npm run build-data" for route lines, stops & names';
+  }
+}
+
+function applyFilter() {
+  if (hasStatic) {
+    const m = ['any', ['==', ['downcase', ['get', 's']], filter], ['==', ['downcase', ['get', 'id']], filter]];
+    map.setFilter('lines-hi', filter ? m : ['==', ['get', 'id'], '']);
+    map.setPaintProperty('lines', 'line-opacity', filter ? 0.08 : 0.35);
+  }
+  const i = filter && info(filter);
+  document.getElementById('rname').textContent = i ? `${i.s} – ${i.l}` : (hasStatic ? '' : document.getElementById('rname').textContent);
+}
+
+map.on('load', async () => {
+  addArrow();
+  await loadStatic();
+  map.addSource('veh', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'veh', type: 'symbol', source: 'veh',
+    layout: {
+      'icon-image': 'arrow', 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.3, 15, 0.6],
+      'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map',
+      'icon-allow-overlap': true, 'icon-ignore-placement': true,
+    },
+    paint: { 'icon-color': ['get', 'color'], 'icon-halo-color': '#111', 'icon-halo-width': 1 },
+  });
+  map.on('click', 'veh', e => {
+    const p = e.features[0].properties;
+    const d = p.delay === 'null' || p.delay == null ? 'n/a' : `${Math.round(p.delay / 60)} min`;
+    new maplibregl.Popup().setLngLat(e.lngLat)
+      .setHTML(`<b>${p.route}</b> ${p.name}<br>Vehicle ${p.id}<br>Delay: ${d}<br>${p.speed ? (p.speed * 3.6).toFixed(0) + ' km/h' : ''}`)
+      .addTo(map);
+  });
+  map.on('mouseenter', 'veh', () => map.getCanvas().style.cursor = 'pointer');
+  map.on('mouseleave', 'veh', () => map.getCanvas().style.cursor = '');
+  ready = true;
+});
+
+document.getElementById('route').addEventListener('input', e => { filter = e.target.value.trim().toLowerCase(); applyFilter(); });
+document.getElementById('color').addEventListener('change', e => { colorMode = e.target.value; renderLegend(); });
+
+document.getElementById('mode').addEventListener('click', e => {
+  is3D = !is3D;
+  e.target.textContent = is3D ? 'Switch to 2D' : 'Switch to 3D';
+  if (is3D && map.getSource('openmaptiles') && !map.getLayer('bldg3d')) {
+    map.addLayer({
+      id: 'bldg3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 13,
+      paint: {
+        'fill-extrusion-color': '#c9ccd1', 'fill-extrusion-opacity': 0.85,
+        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 10],
+        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+      },
+    }, map.getLayer('lines') ? 'lines' : 'veh');
+  }
+  if (map.getLayer('bldg3d')) map.setLayoutProperty('bldg3d', 'visibility', is3D ? 'visible' : 'none');
+  map.easeTo({ pitch: is3D ? 60 : 0, bearing: is3D ? -20 : 0, zoom: is3D ? Math.max(map.getZoom(), 14) : map.getZoom(), duration: 1200 });
+});
+
+renderLegend();
+refresh(); setInterval(refresh, POLL_MS / 3);
+render();
+</script>
+</body>
+</html>
