@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fleet models</title>
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: #cfd6dc; overflow: hidden; }
+  #bar { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; z-index: 1; }
+  select, label { background: rgba(20,24,30,.92); color: #fff; border: 0; border-radius: 8px; padding: 7px 10px; font-size: 13px; }
+  #info { position: absolute; left: 12px; bottom: 12px; background: rgba(20,24,30,.92); color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 13px; line-height: 1.5; }
+  canvas { display: block; touch-action: none; }
+</style></head><body>
+<div id="bar"><select id="sel"></select><label><input type="checkbox" id="spin" checked> spin</label><label style="background:none;color:#334">drag to orbit · wheel to zoom</label></div>
+<div id="info"></div><canvas id="c"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="models3d.js"></script>
+<script>
+// One entry per fleet family (the same roster strings the tracker receives).
+const LIST = [
+  ['Nova Bus LFS (diesel)', 'Nova Bus LFS · Diesel · 12 m', 'bus'], ['Nova Bus LFS (hybrid)', 'Nova Bus LFS · Hybrid · 12 m', 'bus'],
+  ['Nova Bus LFSe+ (electric)', 'Nova Bus LFSe+ · Electric · 12 m', 'bus'], ['Nova Bus LFS Artic', 'Nova Bus LFS Artic · Diesel · 18 m', 'bus'],
+  ['Orion VII Next Gen', 'Orion VII Next Gen · Hybrid · 12 m', 'bus'], ['New Flyer XDE40', 'New Flyer XDE40 · Hybrid · 12 m', 'bus'],
+  ['New Flyer XE40 (electric)', 'New Flyer XE40 · Electric · 12 m', 'bus'], ['New Flyer XDE60', 'New Flyer XDE60 · Hybrid · 18 m', 'bus'],
+  ['Proterra BE40', 'Proterra BE40 · Electric · 12 m', 'bus'], ['BYD K9M', 'BYD K9M · Electric · 12 m', 'bus'],
+  ['Arboc SOI 21 (Wheel-Trans)', 'ProMaster Arboc SOI 21 · Gasoline · 6 m', 'bus'],
+  ['Flexity Outlook streetcar', 'Bombardier Flexity Outlook · Streetcar · 30 m', 'streetcar'], ['CLRV streetcar', 'Bombardier CLRV · Streetcar · 15 m', 'streetcar'], ['ALRV streetcar', 'Bombardier ALRV · Streetcar · 23 m', 'streetcar'],
+];
+const T = THREE, canvas = document.getElementById('c'), r = new T.WebGLRenderer({ canvas, antialias: true });
+const scene = new T.Scene(), cam = new T.PerspectiveCamera(32, 1, 1, 500); cam.up.set(0, 0, 1);
+const body = new T.MeshBasicMaterial({ vertexColors: true, side: T.DoubleSide }), acc = new T.MeshBasicMaterial({ vertexColors: true, color: 0x2b8cff, side: T.DoubleSide });
+let cur = null, az = 35, el = 24, dist = 30, size = 12;
+const sel = document.getElementById('sel');
+LIST.forEach(([n], i) => sel.insertAdjacentHTML('beforeend', `<option value="${i}">${n}</option>`));
+function show(i) {
+  if (cur) { scene.remove(cur); cur.children.forEach(m => m.geometry.dispose()); }
+  const [, model, kind] = LIST[i], spec = VehicleModels.specFor({ model, kind }), m = VehicleModels.build(T, spec);
+  cur = new T.Group(); cur.add(new T.Mesh(m.body, body), new T.Mesh(m.accent, acc)); scene.add(cur);
+  size = spec.L; dist = size * 1.5 + 8;
+  document.getElementById('info').innerHTML = `<b>${LIST[i][0]}</b><br>${spec.L} m long · ${spec.W} m wide · ${spec.H} m tall<br>${spec.sections.length > 1 ? spec.sections.length + ' sections' : 'single body'} · ${spec.prop}`;
+}
+sel.onchange = () => show(+sel.value); show(0);
+let drag = null;
+canvas.onpointerdown = e => { drag = [e.clientX, e.clientY]; canvas.setPointerCapture(e.pointerId); document.getElementById('spin').checked = false; };
+canvas.onpointerup = () => drag = null;
+canvas.onpointermove = e => { if (!drag) return; az -= (e.clientX - drag[0]) * 0.4; el = Math.max(3, Math.min(85, el + (e.clientY - drag[1]) * 0.3)); drag = [e.clientX, e.clientY]; };
+canvas.onwheel = e => { e.preventDefault(); dist = Math.max(size * 0.6, Math.min(size * 4, dist * (1 + Math.sign(e.deltaY) * 0.08))); };
+function frame() {
+  const w = innerWidth, h = innerHeight;
+  if (canvas.width !== w * devicePixelRatio) { r.setPixelRatio(devicePixelRatio); r.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix(); }
+  if (document.getElementById('spin').checked) az += 0.4;
+  const a = az * Math.PI / 180, e = el * Math.PI / 180;
+  cam.position.set(Math.sin(a) * Math.cos(e) * dist, -Math.cos(a) * Math.cos(e) * dist, Math.sin(e) * dist + 1.5); cam.lookAt(0, 0, 1.5);
+  r.setClearColor(0xcfd6dc); r.render(scene, cam); requestAnimationFrame(frame);
+}
+frame();
+</script></body></html>

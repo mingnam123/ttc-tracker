@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TTC Live Tracker</title>
+<title>TTC + YRT Live Tracker</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <style>
   html, body, #map { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
@@ -14,51 +14,137 @@
            padding: 6px; border-radius: 6px; border: 0; font-size: 13px; }
   #panel button { background: #da291c; color: #fff; cursor: pointer; }
   #stat, #rname { margin-top: 8px; color: #aab; }
-  #rname { color: #fff; font-weight: 600; }
+  #rname { color: #fff; font-weight: 600; white-space: pre-line; }
   #legend div { margin-top: 3px; }
+  .vcard .maplibregl-popup-content { padding: 0; border-radius: 12px; overflow: hidden; min-width: 220px;
+           box-shadow: 0 4px 18px rgba(0,0,0,.3); font-size: 12.5px; color: #223; }
+  .vcard .maplibregl-popup-close-button { color: #fff; font-size: 18px; right: 4px; top: 4px; background: rgba(0,0,0,.28);
+           border-radius: 50%; width: 22px; height: 22px; line-height: 20px; padding: 0; }
+  .vcard .hd { padding: 9px 34px 9px 12px; color: #fff; font-weight: 700; font-size: 14px; }
+  .vcard .bd { padding: 8px 12px 10px; background: #fff; }
+  .vcard .row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+  .vcard .row b { font-weight: 600; } .vcard .row span { text-align: right; color: #445; }
+  .vcard .badge { padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+  #alertModal { display: none; position: fixed; inset: 0; z-index: 5; background: rgba(10,15,20,.5); align-items: center; justify-content: center; padding: 16px; }
+  #alertModal .sheet { background: #fff; color: #1f3a2d; border-radius: 18px; width: min(640px, 100%); max-height: 88vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+  #alertModal .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 18px; background: #eef4ef; border-radius: 18px 18px 0 0; }
+  #alertModal .kicker { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #a3281e; }
+  #alertModal h2 { margin: 2px 0 0; font-size: 20px; } #alertModal h3 { margin: 10px 0 6px; font-size: 16px; }
+  #alertModal .top button { border: 1px solid #ccd; background: #fff; border-radius: 20px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+  #alertModal section { padding: 14px 18px; border-top: 1px solid #e6ece8; } #alertModal p { line-height: 1.45; font-size: 14px; }
+  #alertModal .chips { display: flex; gap: 6px; flex-wrap: wrap; } #alertModal .chip { padding: 3px 10px; border-radius: 14px; font-size: 12px; font-weight: 700; }
+  #alertModal .chip.a { background: #fbe4e2; color: #a3281e; } #alertModal .chip.b { background: #e3efe7; color: #2e6b4a; } #alertModal .chip.c { background: #2e6b4a; color: #fff; }
+  #alertModal .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f1f6f2; border-radius: 12px; padding: 12px; font-size: 13px; }
+  #alertModal .facts b { display: block; font-size: 11px; text-transform: uppercase; color: #667; }
+  #alertModal .more { display: inline-block; margin-top: 12px; background: #2e6b4a; color: #fff; padding: 8px 16px; border-radius: 20px; font-weight: 700; text-decoration: none; }
+  #alertModal .src { padding: 10px 18px; font-size: 11px; color: #778; border-top: 1px solid #e6ece8; }
+  #runpanel { display: none; position: absolute; right: 12px; bottom: 30px; z-index: 2; width: min(350px, calc(100vw - 24px)); box-sizing: border-box;
+              background: rgba(20,24,30,.95); color: #fff; border-radius: 12px; padding: 10px 12px 12px; font-size: 12px; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  #runpanel h2 { margin: 0 24px 2px 0; font-size: 13px; } #runpanel .sub { color: #aab; margin-bottom: 6px; }
+  #runpanel .x { position: absolute; top: 6px; right: 8px; background: none; border: 0; color: #aab; font-size: 18px; cursor: pointer; }
+  #runpanel .chips { display: flex; gap: 5px; flex-wrap: wrap; margin: 4px 0 6px; }
+  #runpanel .chips button { background: #2a313b; color: #dde; border: 0; border-radius: 10px; padding: 2px 8px; font-size: 11px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #runpanel .chips button.on { background: #1f8a4c; color: #fff; }
+  #runpanel .big { font-size: 20px; font-weight: 700; } #runpanel .big small { font-size: 12px; font-weight: 400; color: #aab; }
+  #runpanel .cap { color: #889; font-size: 10.5px; margin-top: 6px; } #runpanel .h { margin-top: 8px; color: #aab; font-weight: 600; }
+  #runpanel svg { display: block; width: 100%; height: auto; } #runpanel #rtip { min-height: 15px; color: #cfd; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 </style>
 </head>
 <body>
 <div id="panel">
-  <h1>TTC Live Tracker</h1>
-  <input id="route" list="routes" placeholder="Route (e.g. 504, 29)">
+  <h1>TTC + YRT Live Tracker</h1>
+  <input id="route" list="routes" placeholder="TTC 504 · YRT 52 · yrt · 29">
   <datalist id="routes"></datalist>
   <select id="color">
     <option value="type">Colour: vehicle type</option>
     <option value="delay">Colour: delay</option>
     <option value="crowd">Colour: crowding</option>
   </select>
+  <label style="display:block;margin-top:8px;cursor:pointer"><input type="checkbox" id="trails" checked style="width:auto;margin:0 6px 0 0;vertical-align:middle">Motion trails</label>
+  <div style="margin-top:8px;display:flex;gap:14px">
+    <label style="cursor:pointer"><input type="checkbox" id="showBus" checked style="width:auto;margin:0 6px 0 0;vertical-align:middle">Buses</label>
+    <label style="cursor:pointer"><input type="checkbox" id="showTram" checked style="width:auto;margin:0 6px 0 0;vertical-align:middle">Streetcars</label>
+  </div>
   <button id="mode">Switch to 3D</button>
   <div id="rname"></div>
   <div id="stat">Loading…</div>
+  <div id="agencies" style="margin-top:4px;color:#aab;font-size:12px;white-space:pre-line"></div>
+  <div id="dbg" style="margin-top:4px;color:#778;font-size:11px;white-space:pre-line"></div>
   <div id="legend" style="margin-top:8px"></div>
 </div>
 <div id="map"></div>
 
+<div id="runpanel"></div>
+<div id="alertModal"><div class="sheet"></div></div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="models3d.js"></script>
 <script>
 const POLL_MS = 15000;
 const GREY = '#8a8f98';
 const PALETTES = {
-  type: [['Streetcar', '#da291c'], ['Bus', '#2b8cff'], ['Other', '#b0a0d0']],
+  type: [['TTC streetcar', '#da291c'], ['TTC bus', '#2b8cff'], ['YRT bus', '#14b8a6'], ['Other', '#b0a0d0']],
   delay: [['Early (>1 min)', '#4aa8ff'], ['On time (≤2 min late)', '#2fbf71'], ['2–5 min late', '#f5a623'], ['>5 min late', '#e5392b'], ['No data', GREY]],
   crowd: [['Empty / many seats', '#2fbf71'], ['Few seats', '#e6d44a'], ['Standing room', '#f5a623'], ['Crushed / full', '#e5392b'], ['No data', GREY]],
 };
 
 const map = new maplibregl.Map({
   container: 'map', style: 'https://tiles.openfreemap.org/styles/liberty',
-  center: [-79.38, 43.70], zoom: 11,
+  center: [-79.38, 43.70], zoom: 11, antialias: true,
 });
 map.addControl(new maplibregl.NavigationControl());
+map.on('error', e => console.error('map error:', e.error || e));
 
-let routes = {}, byShort = {};
+let routes = {}, fq = null; // fq = parsed route filter {agency, short}
 const vehicles = new Map(); // id -> {from,to,cur,bearing,route,speed,delay,occ,kind}
-let t0 = performance.now(), lastUpdated = null, filter = '', colorMode = 'type', is3D = false, ready = false, hasStatic = false;
+let lastUpdated = null, colorMode = 'type', is3D = false, ready = false, hasStatic = false;
 
+const TRAIL_POINTS = 5, TRAIL_MS = 180000, MOVE_MIN_M = 8;
+let trailsOn = true, tipFrame = 0;
+const typeOn = { bus: true, streetcar: true };
+let idTrust = {}; // agency -> do the feed's vehicle ids behave like fleet numbers? (see refresh)
 const lerp = (a, b, t) => a + (b - a) * t;
-const info = r => routes[r] || byShort[String(r).toLowerCase()] || null;
-const matches = v => !filter || String(v.route).toLowerCase() === filter || info(v.route)?.s.toLowerCase() === filter;
+const bearingBetween = (a, b) => (Math.atan2((b[0] - a[0]) * Math.cos(b[1] * Math.PI / 180), b[1] - a[1]) * 180 / Math.PI + 360) % 360;
+const metres = (a, b) => Math.hypot((b[0] - a[0]) * 111320 * Math.cos(b[1] * Math.PI / 180), (b[1] - a[1]) * 111320);
+const EMPTY = { type: 'FeatureCollection', features: [] };
+
+// Older trail segments: rebuilt on each feed update (and every 5 s so expired points drop off).
+// The newest segment (last history point -> live marker) is rebuilt every frame in render().
+function rebuildHist() {
+  const src = map.getSource('trail-hist');
+  if (!src) return;
+  if (!trailsOn) { src.setData(EMPTY); return; }
+  const now = Date.now(), features = [];
+  for (const v of vehicles.values()) {
+    const live = v.hist.filter(p => now - p[2] < TRAIL_MS);
+    v.m = live.length;
+    if (!v.m || !matches(v)) continue;
+    const color = colorOf(v);
+    for (let j = 0; j < live.length - 1; j++)
+      features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[live[j][0], live[j][1]], [live[j + 1][0], live[j + 1][1]]] },
+        properties: { color, a: 0.12 + 0.55 * (j + 1) / live.length } });
+  }
+  src.setData({ type: 'FeatureCollection', features });
+}
+let byShort = null;
+const info = r => {
+  if (routes[r]) return routes[r];
+  if (!byShort) { byShort = {}; for (const x of Object.values(routes)) byShort[`${x.a}:${kOf(x)}`] ??= x; }
+  const [ag, ...rest] = String(r ?? '').split(':');
+  return byShort[`${ag}:${norm(rest.join(':'))}`] || (ag === 'TTC' || ag === 'YRT' ? routes[rest.join(':')] : null) || null; // last: older unprefixed routes.json
+};
+// Filter text: "TTC 504" / "ttc:504" -> that route; "yrt" -> whole agency; "504" -> that number on either agency.
+function parseFilter(text) {
+  const t = text.trim().toLowerCase();
+  if (!t) return null;
+  const m = t.match(/^(ttc|yrt)\s*[: ]?\s*(.*)$/);
+  return m ? { agency: m[1].toUpperCase(), short: norm(m[2].trim()) } : { agency: null, short: norm(t) };
+}
+const norm = s => String(s).toLowerCase().replace(/^0+(?=\d)/, ''); // "001" -> "1"
+const kOf = r => r.k ?? norm(r.s);
+const shortOf = v => { const i = info(v.route); return i ? kOf(i) : norm(String(v.route).split(':').pop()); };
+const matches = v => typeOn[v.kind] !== false && (!fq || ((!fq.agency || v.agency === fq.agency) && (!fq.short || shortOf(v) === fq.short)));
 const kindOf = r => { const t = info(r)?.t; return t === '0' ? 'streetcar' : t === '3' || t == null ? 'bus' : 'other'; };
 
 function colorOf(v) {
@@ -72,56 +158,241 @@ function colorOf(v) {
     if (o == null || o > 5) return GREY;
     return o <= 1 ? '#2fbf71' : o === 2 ? '#e6d44a' : o === 3 ? '#f5a623' : '#e5392b';
   }
-  return v.kind === 'streetcar' ? '#da291c' : v.kind === 'bus' ? '#2b8cff' : '#b0a0d0';
+  return v.kind === 'streetcar' ? '#da291c' : v.agency === 'YRT' ? '#14b8a6' : v.kind === 'bus' ? '#2b8cff' : '#b0a0d0';
 }
 
+const BUS_SVG = '<svg width="14" height="14" viewBox="0 0 48 48" style="vertical-align:middle;margin-right:6px"><polygon points="24,3 40,42 24,33 8,42" fill="#ccd" stroke="#111" stroke-width="3"/></svg>';
+const TRAM_SVG = '<svg width="14" height="14" viewBox="0 0 28 68" style="vertical-align:middle;margin-right:6px"><polygon points="14,2 25,15 25,66 3,66 3,15" fill="#ccd" stroke="#111" stroke-width="3"/><line x1="3" y1="38" x2="25" y2="38" stroke="#111" stroke-width="3"/></svg>';
 function renderLegend() {
   document.getElementById('legend').innerHTML = PALETTES[colorMode]
-    .map(([l, c]) => `<div><span class="dot" style="background:${c}"></span>${l}</div>`).join('');
+    .map(([l, c]) => `<div><span class="dot" style="background:${c}"></span>${l}</div>`).join('')
+    + `<div style="margin-top:8px;color:#aab">Shape</div><div>${BUS_SVG}Bus</div><div>${TRAM_SVG}Streetcar</div>`;
+}
+
+function showAgencies(a) {
+  if (!a) return;
+  const lines = [Object.entries(a).map(([k, s]) => s.error ? `${k} ✗` : `${k} ${s.count}`).join(' · ')];
+  for (const [k, s] of Object.entries(a)) if (s.error) lines.push(`${k}: ${String(s.error).slice(0, 90)}`);
+  document.getElementById('agencies').textContent = lines.join('\n');
 }
 
 async function refresh() {
   try {
     const data = await (await fetch('/api/vehicles')).json();
-    if (!data.updated || data.updated === lastUpdated) return;
+    showAgencies(data.agencies);
+    if (!data.updated) { document.getElementById('stat').textContent = data.error ? 'Server: ' + data.error : 'Waiting for live feeds…'; return; }
+    if (data.updated === lastUpdated) return;
     lastUpdated = data.updated;
-    const seen = new Set();
+    const seen = new Set(), now = performance.now();
+    // Type comes from vehicle.id (fleet number). Self-check: if an agency has streetcar ROUTES in the schedule data but not one
+    // vehicle id says "streetcar", the ids probably aren't fleet numbers, so type that agency by route instead.
+    const tally = {};
+    for (const v of data.vehicles) { const s = (tally[v.agency] ??= { byId: 0, byRoute: 0 }); if (v.type === 'streetcar') s.byId++; if (kindOf(v.route) === 'streetcar') s.byRoute++; }
+    idTrust = Object.fromEntries(Object.entries(tally).map(([a, s]) => [a, !(s.byRoute > 0 && s.byId === 0)]));
     for (const v of data.vehicles) {
       seen.add(v.id);
       const pos = [v.lon, v.lat], prev = vehicles.get(v.id);
+      // Only restart a vehicle's glide when its target position actually changed (the two agencies update at different moments).
+      const fresh = !prev || prev.to[0] !== pos[0] || prev.to[1] !== pos[1];
+      let bearing = v.bearing; // YRT's feed has no bearing: derive it from movement, keep the last known one while parked
+      if (bearing == null) {
+        bearing = prev?.bearing ?? null;
+        if (prev && metres(prev.to, pos) > MOVE_MIN_M) bearing = bearingBetween(prev.to, pos);
+      }
       vehicles.set(v.id, {
-        from: prev ? prev.cur : pos, to: pos, cur: prev ? prev.cur : pos,
-        bearing: v.bearing, route: v.route, speed: v.speed, delay: v.delay, occ: v.occ, kind: kindOf(v.route),
+        from: !prev ? pos : fresh ? prev.cur : prev.from, to: pos, cur: prev ? prev.cur : pos, t0: fresh ? now : prev.t0,
+        hist: !prev ? [] : metres(prev.to, pos) > MOVE_MIN_M
+          ? [...prev.hist, [prev.cur[0], prev.cur[1], Date.now()]].slice(-TRAIL_POINTS) : prev.hist,
+        m: 0, agency: v.agency, trip: v.trip,
+        bearing, route: v.route, speed: v.speed, delay: v.delay, occ: v.occ, model: v.model,
+        kind: v.type && idTrust[v.agency] !== false ? v.type : kindOf(v.route) === 'streetcar' ? 'streetcar' : 'bus',
       });
     }
     for (const id of vehicles.keys()) if (!seen.has(id)) vehicles.delete(id);
-    t0 = performance.now();
-  } catch (e) { document.getElementById('stat').textContent = 'Feed error – retrying'; }
+    rebuildHist();
+    if (selId && card && vehicles.has(selId)) { card.setHTML(cardHTML(selId, vehicles.get(selId))); drawRun(); }
+  } catch (e) { console.error(e); document.getElementById('stat').textContent = 'Cannot reach /api/vehicles – is the server running?'; }
 }
 
-function render() {
-  if (ready) {
-    const t = Math.min((performance.now() - t0) / POLL_MS, 1), features = [];
+// ---- 3D vehicle models (3D mode only): extruded boxes built from real vehicle dimensions ----
+// Each vehicle becomes a few stacked parts: body, recessed dark window band, roof, a yellow destination sign at the
+// FRONT, and for long vehicles articulated sections with a dark joint (streetcar: plus a pantograph).
+const M_LAT = 111320;
+function lengthOf(v) {
+  const m = /(\d+(?:\.\d+)?)\s*m\b/.exec(v.model || '');
+  return m ? Number(m[1]) : v.kind === 'streetcar' ? 30 : 12;
+}
+function vehicleParts(v, s) {
+  const L = lengthOf(v) * s, W = (v.kind === 'streetcar' ? 2.65 : 2.55) * s, H = (v.kind === 'streetcar' ? 3.5 : 3.1) * s;
+  const body = colorOf(v), glass = '#2b3641', n = L >= 26 ? 3 : L / s >= 16 ? 2 : 1, gap = n > 1 ? 0.9 * s : 0;
+  const secL = (L - gap * (n - 1)) / n, parts = [];
+  const box = (y0, y1, hw, b, h, c) => parts.push({ y0, y1, hw, b: b * s, h: h * s, c });
+  for (let k = 0; k < n; k++) {
+    const y0 = -L / 2 + k * (secL + gap), y1 = y0 + secL;
+    box(y0, y1, W / 2, 0.35, 1.2, body);                              // lower body
+    box(y0 + 0.1 * s, y1 - 0.1 * s, W / 2 - 0.07 * s, 1.2, 2.45, glass); // window band, slightly recessed
+    box(y0, y1, W / 2, 2.45, H / s, body);                           // roof
+    if (k < n - 1) box(y1, y1 + gap, W / 2 - 0.35 * s, 0.6, 3.0, '#1d1f23'); // articulation joint
+  }
+  box(L / 2 - 0.25 * s, L / 2, W / 2 - 0.25 * s, 1.9, 2.75, '#ffd54a');       // destination sign marks the front
+  if (v.kind === 'streetcar') box(-L / 2 + secL * 0.5 - 0.6 * s, -L / 2 + secL * 0.5 + 0.6 * s, 0.6 * s, H / s, H / s + 0.7, '#8a8f98'); // pantograph
+  return parts;
+}
+function build3D() {
+  const z = map.getZoom(), s = Math.min(8, Math.max(1, 2 ** (17 - z)));  // grow at distance so they stay visible; true size from zoom 17
+  const bnd = map.getBounds(), padLon = (bnd.getEast() - bnd.getWest()) * 0.15, padLat = (bnd.getNorth() - bnd.getSouth()) * 0.15;
+  const feats = [];
+  for (const [id, v] of vehicles) {
+    if (!v.cur || !matches(v)) continue;
+    const [lon, lat] = v.cur;
+    if (lon < bnd.getWest() - padLon || lon > bnd.getEast() + padLon || lat < bnd.getSouth() - padLat || lat > bnd.getNorth() + padLat) continue;
+    if (feats.length > 4000) break;
+    const th = (v.bearing ?? 0) * Math.PI / 180, sn = Math.sin(th), cs = Math.cos(th), kLon = M_LAT * Math.cos(lat * Math.PI / 180);
+    const pt = (x, y) => [lon + (x * cs + y * sn) / kLon, lat + (-x * sn + y * cs) / M_LAT]; // x = right of travel, y = forward
+    for (const p of vehicleParts(v, s))
+      feats.push({ type: 'Feature', properties: { vid: id, b: p.b, h: p.h, c: p.c },
+        geometry: { type: 'Polygon', coordinates: [[pt(-p.hw, p.y0), pt(p.hw, p.y0), pt(p.hw, p.y1), pt(-p.hw, p.y1), pt(-p.hw, p.y0)]] } });
+  }
+  map.getSource('veh3d').setData({ type: 'FeatureCollection', features: feats });
+}
+let f3 = 0;
+const MODEL_MIN_ZOOM = 13;
+let useModels = false; // true when three.js loaded: detailed per-model meshes replace the simple extruded boxes
+
+// ---- detailed 3D models (three.js custom layer) ----------------------------------------------------------------------
+// models3d.js builds one mesh per fleet family (Nova LFS, New Flyer, Orion, Flexity, CLRV...) at real size. Every vehicle
+// reuses the shared geometry; its full model-view-projection matrix is composed here in double precision and handed to
+// three.js as the object's world matrix (a camera with an identity projection), which avoids the float32 jitter you get
+// from large Mercator translations at high zoom.
+const modelLayer = {
+  id: 'veh-models', type: 'custom', renderingMode: '3d',
+  onAdd(m, gl) {
+    const T = THREE;
+    this.renderer = new T.WebGLRenderer({ canvas: m.getCanvas(), context: gl, antialias: true });
+    this.renderer.autoClear = false;
+    this.scene = new T.Scene(); this.camera = new T.Camera();
+    this.geoms = new Map(); this.pool = new Map(); this.accentMats = new Map();
+    this.bodyMat = new T.MeshBasicMaterial({ vertexColors: true, side: T.DoubleSide });
+    this.P = new T.Matrix4(); this.A = new T.Matrix4(); this.B = new T.Matrix4(); this.C = new T.Matrix4();
+  },
+  geometryFor(v) {
+    const spec = VehicleModels.specFor(v);
+    let g = this.geoms.get(spec.key);
+    if (!g) this.geoms.set(spec.key, g = VehicleModels.build(THREE, spec));
+    return g;
+  },
+  meshesFor(id, g) {
+    let e = this.pool.get(id);
+    if (!e || e.g !== g) {
+      if (e) { this.scene.remove(e.body, e.accent); }
+      const body = new THREE.Mesh(g.body, this.bodyMat), accent = new THREE.Mesh(g.accent, this.accentMats.get('#8a8f98') || this.accentMat('#8a8f98'));
+      for (const o of [body, accent]) { o.matrixAutoUpdate = false; o.frustumCulled = false; this.scene.add(o); }
+      this.pool.set(id, e = { body, accent, g });
+    }
+    return e;
+  },
+  accentMat(col) {
+    let m = this.accentMats.get(col);
+    if (!m) this.accentMats.set(col, m = new THREE.MeshBasicMaterial({ vertexColors: true, color: col, side: THREE.DoubleSide }));
+    return m;
+  },
+  render(gl, matrix) {
+    for (const e of this.pool.values()) e.body.visible = e.accent.visible = false;
+    this.drawn = new Map();
+    if (!is3D || map.getZoom() < MODEL_MIN_ZOOM) return;
+    const T = THREE, now = performance.now(), e = Math.min(8, Math.max(1, 2 ** (17 - map.getZoom())));
+    const b = map.getBounds(), padX = (b.getEast() - b.getWest()) * 0.15, padY = (b.getNorth() - b.getSouth()) * 0.15;
+    this.P.fromArray(matrix);
+    let n = 0;
     for (const [id, v] of vehicles) {
       if (!matches(v)) continue;
+      const t = Math.min((now - v.t0) / POLL_MS, 1), lon = lerp(v.from[0], v.to[0], t), lat = lerp(v.from[1], v.to[1], t);
+      if (lon < b.getWest() - padX || lon > b.getEast() + padX || lat < b.getSouth() - padY || lat > b.getNorth() + padY) continue;
+      if (++n > 600) break;
+      const tgt = v.bearing ?? v.hd ?? 0;                                                   // ease the heading so turns look natural
+      v.hd = v.hd == null ? tgt : v.hd + ((((tgt - v.hd) % 360) + 540) % 360 - 180) * 0.2;
+      const mesh = this.meshesFor(id, this.geometryFor(v));
+      const mc = maplibregl.MercatorCoordinate.fromLngLat([lon, lat], 0), s = mc.meterInMercatorCoordinateUnits() * e;
+      const M = mesh.body.matrix;
+      M.copy(this.P).multiply(this.A.makeTranslation(mc.x, mc.y, 0)).multiply(this.B.makeScale(s, -s, s)).multiply(this.C.makeRotationZ(-v.hd * Math.PI / 180));
+      mesh.accent.matrix.copy(M);
+      mesh.body.matrixWorldNeedsUpdate = mesh.accent.matrixWorldNeedsUpdate = true;
+      mesh.accent.material = this.accentMat(id === selId ? '#ffffff' : colorOf(v));
+      mesh.body.visible = mesh.accent.visible = true;
+      this.drawn.set(id, [lon, lat]);
+    }
+    if (this.pool.size > 1500) for (const [id, ent] of this.pool) if (!this.drawn.has(id) && !vehicles.has(id)) { this.scene.remove(ent.body, ent.accent); this.pool.delete(id); }
+    this.renderer.state.reset();
+    this.renderer.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    this.renderer.render(this.scene, this.camera);
+    map.triggerRepaint();
+  },
+};
+// nearest drawn model to a screen point (the custom layer is not queryable, so clicks are matched by projection)
+function pickModel(point) {
+  let best = null, bd = 26;
+  for (const [id, ll] of modelLayer.drawn ?? []) {
+    const p = map.project(ll), d = Math.hypot(p.x - point.x, p.y - point.y - 6);
+    if (d < bd) { bd = d; best = id; }
+  }
+  return best;
+}
+function render() {
+  try { if (ready) {
+    const nowP = performance.now(), features = [], tips = [], nowMs = Date.now();
+    for (const [id, v] of vehicles) {
+      const t = Math.min((nowP - v.t0) / POLL_MS, 1);
       v.cur = [lerp(v.from[0], v.to[0], t), lerp(v.from[1], v.to[1], t)];
+      if (!matches(v)) continue;
       const i = info(v.route);
       features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: v.cur },
-        properties: { id, route: i?.s ?? v.route, name: i?.l ?? '', bearing: v.bearing, speed: v.speed,
-                      delay: v.delay, color: colorOf(v) } });
+        properties: { id, agency: v.agency, route: i?.s ?? String(v.route).split(':').pop(), name: i?.l ?? '', bearing: v.bearing ?? 0, hasB: v.bearing == null ? 0 : 1, speed: v.speed,
+                      delay: v.delay, model: v.model || '', color: colorOf(v), type: v.kind, dr: v.kind === 'streetcar' ? 1.6 : 1,
+                      icon: (v.kind === 'streetcar' ? 'tram' : 'arrow') + colorOf(v) } });
+    }
+    if ((tipFrame++ & 1) === 0) {
+      if (trailsOn) for (const v of vehicles.values()) {
+        const last = v.hist[v.hist.length - 1];
+        if (last && v.m && nowMs - last[2] < TRAIL_MS && matches(v))
+          tips.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[last[0], last[1]], v.cur] },
+            properties: { color: colorOf(v), a: 0.67 } });
+      }
+      map.getSource('trail-tip').setData({ type: 'FeatureCollection', features: tips });
     }
     map.getSource('veh').setData({ type: 'FeatureCollection', features });
+    if (is3D && map.getZoom() >= MODEL_MIN_ZOOM && (f3++ & 1) === 0 && !useModels) build3D();
+    updateSelection();
     document.getElementById('stat').textContent =
       `${features.length} vehicles · updated ${lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '—'}`;
-  }
+  } } catch (e) { console.error(e); document.getElementById('stat').textContent = 'Render error: ' + e.message; }
   setTimeout(render, 100);
 }
 
-function addArrow() {
-  const s = 48, c = document.createElement('canvas'); c.width = c.height = s;
-  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.beginPath();
-  g.moveTo(s / 2, 3); g.lineTo(s - 8, s - 6); g.lineTo(s / 2, s - 15); g.lineTo(8, s - 6); g.closePath(); g.fill();
-  map.addImage('arrow', g.getImageData(0, 0, s, s), { sdf: true });
+const ARROW_COLORS = ['#da291c', '#2b8cff', '#14b8a6', '#b0a0d0', '#4aa8ff', '#2fbf71', '#f5a623', '#e5392b', '#e6d44a', GREY];
+function addRouteArrow() { // white chevron pointing right (line-placement icons point along the line)
+  const c = document.createElement('canvas'); c.width = c.height = 24;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#fff'; g.lineWidth = 4; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(8, 5); g.lineTo(16, 12); g.lineTo(8, 19); g.stroke();
+  map.addImage('route-arrow', g.getImageData(0, 0, 24, 24));
+}
+function addArrows() {
+  addRouteArrow();
+  const s = 48;
+  for (const col of ARROW_COLORS) {
+    const c = document.createElement('canvas'); c.width = c.height = s;
+    const g = c.getContext('2d');
+    g.fillStyle = col; g.strokeStyle = '#111'; g.lineWidth = 2; g.beginPath();
+    g.moveTo(s / 2, 3); g.lineTo(s - 8, s - 6); g.lineTo(s / 2, s - 15); g.lineTo(8, s - 6); g.closePath(); g.fill(); g.stroke();
+    map.addImage('arrow' + col, g.getImageData(0, 0, s, s));
+    // streetcar: longer, squared-off body with a pointed nose and a car joint
+    const tc = document.createElement('canvas'); tc.width = 28; tc.height = 68;
+    const h = tc.getContext('2d');
+    h.fillStyle = col; h.strokeStyle = '#111'; h.lineWidth = 2; h.beginPath();
+    h.moveTo(14, 2); h.lineTo(25, 15); h.lineTo(25, 66); h.lineTo(3, 66); h.lineTo(3, 15); h.closePath(); h.fill(); h.stroke();
+    h.beginPath(); h.moveTo(3, 38); h.lineTo(25, 38); h.stroke();
+    map.addImage('tram' + col, h.getImageData(0, 0, 28, 68));
+  }
 }
 
 async function loadStatic() {
@@ -129,22 +400,33 @@ async function loadStatic() {
     const [r, sh, st] = await Promise.all(['routes.json', 'shapes.geojson', 'stops.geojson']
       .map(f => fetch('/data/' + f).then(x => { if (!x.ok) throw new Error(f); return x.json(); })));
     routes = r;
-    for (const k in r) byShort[r[k].s.toLowerCase()] = r[k];
     const dl = document.getElementById('routes');
-    Object.values(r).sort((a, b) => parseInt(a.s) - parseInt(b.s) || a.s.localeCompare(b.s))
-      .forEach(x => dl.insertAdjacentHTML('beforeend', `<option value="${x.s}">${x.l}</option>`));
+    Object.values(r).sort((a, b) => (a.a ?? '').localeCompare(b.a ?? '') || parseInt(a.s) - parseInt(b.s) || a.s.localeCompare(b.s))
+      .forEach(x => dl.insertAdjacentHTML('beforeend', `<option value="${x.a} ${x.s}">${x.l}</option>`));
     map.addSource('lines', { type: 'geojson', data: sh });
     map.addSource('stops', { type: 'geojson', data: st });
-    const lc = ['match', ['get', 't'], '0', '#da291c', '3', '#2b8cff', '#b0a0d0'];
+    const lc = ['case', ['==', ['get', 'a'], 'YRT'], '#14b8a6', ['match', ['get', 't'], '0', '#da291c', '3', '#2b8cff', '#b0a0d0']];
     map.addLayer({ id: 'lines', type: 'line', source: 'lines', paint: { 'line-color': lc, 'line-width': 1, 'line-opacity': 0.35 } });
     map.addLayer({ id: 'lines-hi', type: 'line', source: 'lines', filter: ['==', ['get', 'id'], ''],
       paint: { 'line-color': lc, 'line-width': 4, 'line-opacity': 0.9 } });
+    // Geometry of the selected / filtered route, loaded on demand from /data/route/<AGENCY>_<route>.json
+    map.addSource('route-sel', { type: 'geojson', data: EMPTY });
+    map.addLayer({ id: 'route-case', type: 'line', source: 'route-sel', layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#fff', 'line-opacity': 0.95, 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 6, 13, 10, 17, 17] } });
+    map.addLayer({ id: 'route-line', type: 'line', source: 'route-sel', layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#1f8a4c', 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3, 13, 5.5, 17, 10] } });
+    map.addLayer({ id: 'route-arrows', type: 'symbol', source: 'route-sel', layout: {
+      'symbol-placement': 'line', 'symbol-spacing': 60, 'icon-image': 'route-arrow', 'icon-rotation-alignment': 'map',
+      'icon-allow-overlap': true, 'icon-ignore-placement': true,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.7, 13, 0.9, 17, 1.2] } });
     map.addLayer({ id: 'stops', type: 'circle', source: 'stops', minzoom: 14,
       paint: { 'circle-radius': 2.5, 'circle-color': '#fff', 'circle-stroke-color': '#444', 'circle-stroke-width': 1 } });
-    map.addLayer({ id: 'stop-names', type: 'symbol', source: 'stops', minzoom: 15.5,
-      layout: { 'text-field': ['get', 'n'], 'text-size': 11, 'text-offset': [0, 1], 'text-font': ['Noto Sans Regular'] },
-      paint: { 'text-color': '#222', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } });
-    hasStatic = true;
+    hasStatic = true; // route lines, names and filtering work even if stop labels can't be drawn
+    try {
+      map.addLayer({ id: 'stop-names', type: 'symbol', source: 'stops', minzoom: 15.5,
+        layout: { 'text-field': ['get', 'n'], 'text-size': 11, 'text-offset': [0, 1], 'text-font': ['Noto Sans Regular'] },
+        paint: { 'text-color': '#222', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } });
+    } catch (e) { console.warn('stop labels unavailable:', e.message); }
   } catch (e) {
     document.getElementById('rname').textContent = 'Run "npm run build-data" for route lines, stops & names';
   }
@@ -152,41 +434,287 @@ async function loadStatic() {
 
 function applyFilter() {
   if (hasStatic) {
-    const m = ['any', ['==', ['downcase', ['get', 's']], filter], ['==', ['downcase', ['get', 'id']], filter]];
-    map.setFilter('lines-hi', filter ? m : ['==', ['get', 'id'], '']);
-    map.setPaintProperty('lines', 'line-opacity', filter ? 0.08 : 0.35);
+    const conds = [];
+    if (fq?.agency) conds.push(['==', ['get', 'a'], fq.agency]);
+    if (fq?.short) conds.push(['==', ['coalesce', ['get', 'k'], ['downcase', ['get', 's']]], fq.short]);
+    map.setFilter('lines-hi', conds.length ? ['all', ...conds] : ['==', ['get', 'id'], '']);
   }
-  const i = filter && info(filter);
-  document.getElementById('rname').textContent = i ? `${i.s} – ${i.l}` : (hasStatic ? '' : document.getElementById('rname').textContent);
+  const shown = fq ? Object.values(routes).filter(r => (!fq.agency || r.a === fq.agency) && (!fq.short || kOf(r) === fq.short)) : [];
+  const rn = document.getElementById('rname');
+  if (shown.length && shown.length <= 3) rn.textContent = shown.map(r => `${r.a} ${r.s} – ${r.l}`).join('\n');
+  else if (shown.length) rn.textContent = `${shown.length} routes`;
+  else if (hasStatic) rn.textContent = '';
+}
+
+// ---- click a vehicle: highlight its route and show a detail card ----
+let selId = null, card = null, selMissing = false, alerts = [];
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const OCC = [['Empty', '#2fbf71'], ['Not busy', '#2fbf71'], ['Some seats', '#c9a300'], ['Standing room', '#e08a00'],
+             ['Very busy', '#e5392b'], ['Full', '#e5392b'], ['Not accepting riders', '#888']];
+function delayText(d) {
+  if (d == null) return 'n/a';
+  const m = Math.round(d / 60);
+  return m === 0 ? 'On time' : m > 0 ? `${m} min late` : `${-m} min early`;
+}
+const activeAlerts = v => {
+  const now = Date.now() / 1000, short = shortOf(v);
+  return alerts.filter(al => al.agency === v.agency && (al.routes.some(r => r === v.route || (info(r) && kOf(info(r)) === short)) || (al.shorts ?? []).includes(short)) &&
+    (!al.periods.length || al.periods.some(([a, b]) => (!a || a <= now) && (!b || b >= now))));
+};
+const fmtDate = t => t ? new Date(t * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+async function loadAlerts() {
+  try { alerts = (await (await fetch('/api/alerts')).json()).alerts ?? []; if (selId && card && vehicles.has(selId)) card.setHTML(cardHTML(selId, vehicles.get(selId))); }
+  catch (e) { /* alerts are optional */ }
+}
+function showAlerts(id) {
+  const v = vehicles.get(id); if (!v) return;
+  const list = activeAlerts(v), i = info(v.route);
+  const rt = i?.s ?? String(v.route).split(':').pop();
+  const m = document.getElementById('alertModal');
+  m.querySelector('.sheet').innerHTML = `<div class="top"><div><div class="kicker">Official service information from ${esc(v.agency)}</div><h2>Alerts for ${esc(v.agency)} ${esc(rt)}</h2></div>
+      <button data-close>✕ Close</button></div><div class="alist">` +
+    (list.length ? list.map(al => `<section><div class="chips">${al.effect ? `<span class="chip a">${esc(al.effect)}</span>` : ''}<span class="chip b">Active</span><span class="chip c">Route ${esc(rt)}</span></div>
+        <h3>${esc(al.header)}</h3><p>${esc(al.description || '').replace(/\n/g, '<br>')}</p>
+        <div class="facts"><div><b>Cause</b>${esc(al.cause || 'Not specified')}</div><div><b>Effective from</b>${fmtDate(al.periods[0]?.[0] ?? al.effective)}</div><div><b>Effective until</b>${fmtDate(al.periods[0]?.[1])}</div></div>
+        ${al.url && /^https?:\/\//.test(al.url) ? `<a class="more" href="${esc(al.url)}" target="_blank" rel="noopener">${esc(v.agency)} details</a>` : ''}</section>`).join('')
+      : '<p>No active alerts for this route.</p>') + `</div><div class="src">Source: ${esc(v.agency)} GTFS-Realtime alerts.</div>`;
+  m.style.display = 'flex';
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-alert]');
+  if (b) return showAlerts(b.dataset.alert);
+  if (e.target.closest('[data-close]') || e.target.id === 'alertModal') document.getElementById('alertModal').style.display = 'none';
+});
+function cardHTML(id, v) {
+  const i = info(v.route);
+  const col = i?.c || colorOf0(v);                       // route_color from routes.txt, else colour by vehicle type
+  const fg = i?.x || (luma(col) > 0.6 ? '#000000' : '#ffffff'); // route_text_color, else whichever reads on the background
+  const rt = i?.s ?? String(v.route ?? '').split(':').pop(), name = i?.l ?? '';
+  const o = v.occ != null && OCC[v.occ] ? OCC[v.occ] : null;
+  const row = (k, val) => `<div class="row"><b>${k}</b><span>${val}</span></div>`;
+  const al = activeAlerts(v);
+  const banner = al.length ? `<div style="background:#fdf0ef;color:#a3281e;padding:7px 12px;font-weight:600;font-size:12px">⚠ ${esc(al[0].header)}${al.length > 1 ? ` (+${al.length - 1} more)` : ''}<br>
+      <button data-alert="${esc(id)}" style="margin-top:5px;border:1px solid #e3a9a4;background:#fff;color:#a3281e;border-radius:12px;padding:2px 10px;font-weight:700;cursor:pointer;font-size:11px">Alert details</button></div>` : '';
+  return `<div class="hd" style="background:${col};color:${fg}">${esc(v.agency)} ${esc(rt)}${name ? ' ' + esc(name) : ''}</div>${banner}<div class="bd">` +
+    row('Vehicle ID', esc(String(id).split(':').pop())) +
+    row('Type', v.kind === 'streetcar' ? 'Streetcar' : 'Bus') +
+    (v.model ? (([n, ...rest]) => row('Model', esc(n)) + (rest.length ? `<div style="text-align:right;color:#889;font-size:11px">${esc(rest.join(' · '))}</div>` : ''))(v.model.split(' · ')) : '') +
+    row('Speed', v.speed == null ? 'n/a' : (v.speed * 3.6).toFixed(1) + ' km/h') +
+    row('Occupancy', o ? `<span class="badge" style="background:${o[1]}22;color:${o[1]}">${o[0]}</span>` : 'n/a') +
+    row('Schedule', delayText(v.delay)) +
+    (selMissing ? '<div style="margin-top:6px;color:#a3281e;font-size:11px">No route line for this route in the static data. Re-run: npm run build-data</div>' : '') + '</div>';
+}
+const luma = h => { const n = parseInt(String(h).replace('#', ''), 16) || 0; return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; };
+const colorOf0 = v => v.kind === 'streetcar' ? '#c8281d' : v.agency === 'YRT' ? '#0f9488' : '#2468c9'; // header colour: by type, not by the colour mode
+function selectVehicle(id) {
+  const v = vehicles.get(id);
+  if (!v) return;
+  selId = id;
+  if (card) { const c = card; card = null; c.remove(); }
+  card = new maplibregl.Popup({ className: 'vcard', closeOnClick: false, offset: 18, maxWidth: '260px' })
+    .setLngLat(v.cur).setHTML(cardHTML(id, v)).addTo(map);
+  const mine = card;
+  card.on('close', () => { if (card === mine) { card = null; selId = null; applySelection(); } });
+  applySelection();
+}
+function clearSelection() { if (card) card.remove(); card = null; selId = null; applySelection(); }
+function applySelection() {
+  const v = selId && vehicles.get(selId);
+  if (map.getLayer('veh-sel')) map.setFilter('veh-sel', ['==', ['get', 'id'], v ? selId : '']);
+  updateRoute(false);
+  if (selId) loadRun(); else hideRun();
+}
+// ---- scheduled run-time panel (bottom right): elapsed time along the route, from the GTFS stop_times profile ----
+const runPanel = document.getElementById('runpanel');
+let runFile = null, runPick = null, runHidden = false;
+function hideRun() { runPanel.style.display = 'none'; runFile = null; runPick = null; }
+async function loadRun() {
+  const id = selId, v = id && vehicles.get(id);
+  if (!v) return hideRun();
+  runPick = null; runHidden = false;
+  const file = await loadRouteFile(v.agency, shortOf(v));
+  if (selId !== id) return;
+  runFile = file; drawRun();
+}
+function locate(coords, cum, pos, bearing) { // nearest point of a pattern to the vehicle: {m: metres away, km: distance along, ok: heading agrees}
+  const kx = 111.32 * Math.cos(pos[1] * Math.PI / 180), ky = 110.57, b = (bearing ?? 0) * Math.PI / 180;
+  let best = { m: Infinity };
+  for (let i = 0; i < coords.length - 1; i++) {
+    const ax = (coords[i][0] - pos[0]) * kx, ay = (coords[i][1] - pos[1]) * ky;
+    const dx = (coords[i + 1][0] - coords[i][0]) * kx, dy = (coords[i + 1][1] - coords[i][1]) * ky, L2 = dx * dx + dy * dy;
+    const u = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+    const m = Math.hypot(ax + u * dx, ay + u * dy) * 1000;
+    if (m < best.m) best = { m, km: cum[i] + u * (cum[i + 1] - cum[i]), ok: bearing == null || (dx * Math.sin(b) + dy * Math.cos(b)) >= 0 };
+  }
+  return best;
+}
+function minutesAt(stops, km) { // interpolate elapsed minutes at a distance along the pattern
+  if (km <= stops[0][1]) return stops[0][2];
+  for (let i = 1; i < stops.length; i++) if (km <= stops[i][1]) {
+    const [, d0, t0] = stops[i - 1], [, d1, t1] = stops[i];
+    return d1 === d0 ? t1 : t0 + (t1 - t0) * (km - d0) / (d1 - d0);
+  }
+  return stops[stops.length - 1][2];
+}
+const niceStep = (range, n) => { const r = range / n, p = 10 ** Math.floor(Math.log10(r)), f = r / p; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; };
+function drawRun() {
+  const v = selId && vehicles.get(selId);
+  if (!v || !runFile || runHidden) { if (!v) hideRun(); return; }
+  const i = info(v.route), rt = i?.s ?? String(v.route).split(':').pop();
+  const head = `<button class="x" data-runclose>×</button><h2>${esc(v.agency)} ${esc(rt)}${i?.l ? ' ' + esc(i.l) : ''} · scheduled run time</h2>`;
+  const P = runFile.profiles ?? [];
+  runPanel.style.display = 'block';
+  if (!P.length) { runPanel.innerHTML = head + '<div class="sub">No run-time data for this route yet. Re-run: npm run build-data (needs stop_times.txt in the GTFS zip).</div>'; return; }
+  // which pattern is this vehicle on? nearest line whose direction matches its heading, unless the user picked one
+  const cums = runFile._cum ??= P.map(p => { const c = runFile.features[p.f].geometry.coordinates, cum = [0]; for (let q = 1; q < c.length; q++) { const kx = 111.32 * Math.cos(c[q][1] * Math.PI / 180); cum.push(cum[q - 1] + Math.hypot((c[q][0] - c[q - 1][0]) * kx, (c[q][1] - c[q - 1][1]) * 110.57)); } return cum; });
+  const loc = P.map((p, q) => locate(runFile.features[p.f].geometry.coordinates, cums[q], v.cur, v.bearing));
+  const tk = v.trip ? String(v.trip).split(':').slice(1).join(':') : null, byTrip = tk != null ? runFile.trips?.[tk] : undefined;
+  const auto = byTrip != null ? byTrip : loc.reduce((b, l, q) => (l.m + (l.ok ? 0 : 800) < loc[b].m + (loc[b].ok ? 0 : 800) ? q : b), 0);
+  const q = runPick ?? auto, p = P[q], L = loc[q], here = runPick == null || L.m < 150;
+  const total = p.stops[p.stops.length - 1][2], dist = p.stops[p.stops.length - 1][1];
+  const hereMin = here ? minutesAt(p.stops, Math.min(L.km, dist)) : null;
+  // ---- chart 1: elapsed minutes vs distance ----
+  const W = 326, H = 140, ml = 30, mr = 8, mt = 8, mb = 20, iw = W - ml - mr, ih = H - mt - mb;
+  const ymax = Math.max(5, Math.ceil(total / niceStep(total, 4)) * niceStep(total, 4)), X = d => ml + d / dist * iw, Y = t => mt + ih - t / ymax * ih;
+  const ys = niceStep(ymax, 4), xs = niceStep(dist, 5);
+  let g = '';
+  for (let t = 0; t <= ymax + 1e-9; t += ys) g += `<line x1="${ml}" x2="${W - mr}" y1="${Y(t)}" y2="${Y(t)}" stroke="#2f3742"/><text x="${ml - 4}" y="${Y(t) + 3}" text-anchor="end" fill="#99a" font-size="9">${t}</text>`;
+  for (let d = 0; d <= dist + 1e-9; d += xs) g += `<text x="${X(d)}" y="${H - 6}" text-anchor="middle" fill="#99a" font-size="9">${+d.toFixed(1)}</text>`;
+  const pts = p.stops.map(s => `${X(s[1]).toFixed(1)},${Y(s[2]).toFixed(1)}`);
+  g += `<polygon points="${X(0)},${Y(0)} ${pts.join(' ')} ${X(dist)},${Y(0)}" fill="#1f8a4c" opacity=".22"/><polyline points="${pts.join(' ')}" fill="none" stroke="#3ddc84" stroke-width="2"/>`;
+  g += p.stops.map(s => `<circle cx="${X(s[1]).toFixed(1)}" cy="${Y(s[2]).toFixed(1)}" r="1.8" fill="#3ddc84"/>`).join('');
+  if (here) g += `<line x1="${X(L.km)}" x2="${X(L.km)}" y1="${mt}" y2="${mt + ih}" stroke="#ffd54a" stroke-dasharray="3 3"/><circle cx="${X(L.km)}" cy="${Y(hereMin)}" r="4.5" fill="#ffd54a" stroke="#111"/>`;
+  g += `<line id="rhov" x1="0" x2="0" y1="${mt}" y2="${mt + ih}" stroke="#fff" opacity="0"/><text x="1" y="${mt + 3}" fill="#99a" font-size="8">min</text><text x="${W - mr}" y="${H - 6}" text-anchor="end" fill="#99a" font-size="9">km</text>`;
+  // ---- chart 2: mean scheduled run time by hour of departure ----
+  const hw = 326, hh = 62, hmax = Math.max(...p.hours.map(h => h[1]), 1), hnow = new Date().getHours();
+  const bars = p.hours.map(([h, m, n]) => `<rect x="${(h * hw / 24 + 1).toFixed(1)}" y="${(hh - 14 - m / hmax * (hh - 20)).toFixed(1)}" width="${(hw / 24 - 2).toFixed(1)}" height="${(m / hmax * (hh - 20)).toFixed(1)}" rx="1.5" fill="${h === hnow ? '#ffd54a' : '#3a8f66'}"><title>${String(h).padStart(2, '0')}:00 – ${Math.round(m)} min (${n} trips)</title></rect>`).join('');
+  const lbl = [0, 6, 12, 18].map(h => `<text x="${h * hw / 24 + 2}" y="${hh - 3}" fill="#99a" font-size="9">${String(h).padStart(2, '0')}h</text>`).join('');
+  runPanel.innerHTML = head +
+    `<div class="sub">${esc(p.stops[0][0])} → ${esc(p.stops[p.stops.length - 1][0])}</div>` +
+    (P.length > 1 ? `<div class="chips">${P.map((pp, k) => `<button data-runpick="${k}" class="${k === q ? 'on' : ''}" title="${esc(pp.h)}">${pp.dir ? '←' : '→'} ${esc(pp.h || 'pattern ' + (k + 1))}</button>`).join('')}</div>` : '') +
+    `<div class="big">${Math.round(total)} min <small>start to end · ${dist.toFixed(1)} km · avg ${(dist / total * 60).toFixed(0)} km/h</small></div>` +
+    `<svg id="rsvg" viewBox="0 0 ${W} ${H}">${g}</svg><div id="rtip">${here ? `This vehicle is about ${Math.round(hereMin)} min into the run (${Math.round(total - hereMin)} min to go).` : 'Hover the chart for stop times.'}</div>` +
+    `<div class="h">Run time by departure hour</div><svg viewBox="0 0 ${hw} ${hh}">${bars}${lbl}</svg>` +
+    `<div class="cap">Scheduled (GTFS) average, ${p.trips} trips of this pattern — not live or observed times.</div>`;
+  const svg = document.getElementById('rsvg');
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, d = (x - ml) / iw * dist;
+    const s = p.stops.reduce((b, c) => Math.abs(c[1] - d) < Math.abs(b[1] - d) ? c : b);
+    const hv = document.getElementById('rhov'); hv.setAttribute('x1', X(s[1])); hv.setAttribute('x2', X(s[1])); hv.setAttribute('opacity', '.6');
+    document.getElementById('rtip').textContent = `${s[0]} · +${Math.round(s[2])} min · ${s[1].toFixed(1)} km`;
+  };
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-runclose]')) { runHidden = true; runPanel.style.display = 'none'; }
+  const b = e.target.closest('[data-runpick]'); if (b) { runPick = Number(b.dataset.runpick); drawRun(); }
+});
+
+// ---- route geometry: fetch the small per-route file, draw green line + direction arrows ----
+const routeCache = new Map();
+let routeReq = 0;
+function wantedRoutes() { // [[agency, routeKey], ...] for the selected vehicle, else for the route filter
+  const v = selId && vehicles.get(selId);
+  if (v) return [[v.agency, shortOf(v)]];
+  if (!fq?.short) return [];
+  const seen = new Set(), out = [];
+  for (const r of Object.values(routes)) {
+    if ((fq.agency && r.a !== fq.agency) || kOf(r) !== fq.short || seen.has(r.a)) continue;
+    seen.add(r.a); out.push([r.a, kOf(r)]);
+  }
+  return out;
+}
+function loadRouteFile(a, k) {
+  const key = `${a}_${k}`.replace(/[^a-z0-9._-]/gi, '_');
+  if (!routeCache.has(key)) routeCache.set(key, fetch(`/data/route/${key}.json`).then(r => { if (!r.ok) throw new Error(key); return r.json(); }).catch(() => null));
+  return routeCache.get(key);
+}
+async function updateRoute(fit) {
+  if (!hasStatic || !map.getSource('route-sel')) return;
+  const my = ++routeReq, want = wantedRoutes();
+  const files = await Promise.all(want.map(([a, k]) => loadRouteFile(a, k)));
+  if (my !== routeReq) return; // a newer selection superseded this one
+  let feats = files.flatMap(f => f?.features ?? []);
+  if (want.length && !feats.length) { // route files not built yet: fall back to the overview line of the route
+    feats = want.flatMap(([a, k]) => map.querySourceFeatures('lines', { filter: ['all', ['==', ['get', 'a'], a],
+      ['==', ['coalesce', ['get', 'k'], ['downcase', ['get', 's']]], k]] }));
+  }
+  map.getSource('route-sel').setData({ type: 'FeatureCollection', features: feats });
+  map.setPaintProperty('lines', 'line-opacity', want.length ? 0.1 : 0.35);
+  const missing = !!selId && want.length > 0 && !feats.length;
+  if (missing !== selMissing) { selMissing = missing; if (card && selId && vehicles.has(selId)) card.setHTML(cardHTML(selId, vehicles.get(selId))); }
+  if (fit && !selId && feats.length) {
+    const b = new maplibregl.LngLatBounds();
+    for (const f of feats) for (const c of f.geometry.coordinates) b.extend(c);
+    map.fitBounds(b, { padding: { top: 60, bottom: 60, left: 280, right: 60 }, maxZoom: 15, duration: 700 });
+  }
+}
+function updateSelection() { // called as data refreshes / vehicle glides
+  if (!selId) return;
+  const v = vehicles.get(selId);
+  if (!v) { clearSelection(); return; }
+  card?.setLngLat(v.cur);
 }
 
 map.on('load', async () => {
-  addArrow();
+  addArrows();
   await loadStatic();
   map.addSource('veh', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  for (const id of ['trail-hist', 'trail-tip']) {
+    map.addSource(id, { type: 'geojson', data: EMPTY });
+    map.addLayer({
+      id, type: 'line', source: id, layout: { 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'color'], 'line-opacity': ['get', 'a'],
+               'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.5, 15, 3.5] },
+    });
+  }
   map.addLayer({
-    id: 'veh', type: 'symbol', source: 'veh',
+    id: 'veh-dot', type: 'circle', source: 'veh',
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, ['*', 2, ['get', 'dr']], 15, ['*', 4, ['get', 'dr']]],
+      'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1,
+    },
+  });
+  map.addLayer({
+    id: 'veh', type: 'symbol', source: 'veh', filter: ['==', ['get', 'hasB'], 1],
     layout: {
-      'icon-image': 'arrow', 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.3, 15, 0.6],
+      'icon-image': ['get', 'icon'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.3, 15, 0.6],
       'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true, 'icon-ignore-placement': true,
     },
-    paint: { 'icon-color': ['get', 'color'], 'icon-halo-color': '#111', 'icon-halo-width': 1 },
   });
-  map.on('click', 'veh', e => {
-    const p = e.features[0].properties;
-    const d = p.delay === 'null' || p.delay == null ? 'n/a' : `${Math.round(p.delay / 60)} min`;
-    new maplibregl.Popup().setLngLat(e.lngLat)
-      .setHTML(`<b>${p.route}</b> ${p.name}<br>Vehicle ${p.id}<br>Delay: ${d}<br>${p.speed ? (p.speed * 3.6).toFixed(0) + ' km/h' : ''}`)
-      .addTo(map);
+  map.addSource('veh3d', { type: 'geojson', data: EMPTY });
+  map.addLayer({ id: 'veh-3d', type: 'fill-extrusion', source: 'veh3d', minzoom: MODEL_MIN_ZOOM, layout: { visibility: 'none' },
+    paint: { 'fill-extrusion-color': ['get', 'c'], 'fill-extrusion-base': ['get', 'b'], 'fill-extrusion-height': ['get', 'h'],
+             'fill-extrusion-opacity': 1, 'fill-extrusion-vertical-gradient': true } });
+  if (window.THREE && window.VehicleModels) {
+    try { map.addLayer(modelLayer); useModels = true; } catch (e) { console.warn('3D models unavailable, using simple boxes:', e.message); }
+  }
+  map.on('click', 'veh-3d', e => selectVehicle(e.features[0].properties.vid));
+  map.on('mousemove', e => { if (useModels && is3D) map.getCanvas().style.cursor = pickModel(e.point) ? 'pointer' : ''; });
+  map.on('mouseenter', 'veh-3d', () => map.getCanvas().style.cursor = 'pointer');
+  map.on('mouseleave', 'veh-3d', () => map.getCanvas().style.cursor = '');
+  map.addLayer({ id: 'veh-sel', type: 'circle', source: 'veh', filter: ['==', ['get', 'id'], ''],
+    paint: { 'circle-radius': 16, 'circle-color': ['get', 'color'], 'circle-opacity': 0.25,
+             'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 3 } });
+  for (const L of ['veh', 'veh-dot']) map.on('click', L, e => {
+    selectVehicle(e.features[0].properties.id);
   });
-  map.on('mouseenter', 'veh', () => map.getCanvas().style.cursor = 'pointer');
-  map.on('mouseleave', 'veh', () => map.getCanvas().style.cursor = '');
+  map.on('click', e => {
+    if (useModels && is3D) { const id = pickModel(e.point); if (id) return selectVehicle(id); }
+    if (!map.queryRenderedFeatures(e.point, { layers: ['veh', 'veh-dot', 'veh-3d'] }).length) clearSelection();
+  });
+  for (const L of ['veh', 'veh-dot']) map.on('mouseenter', L, () => map.getCanvas().style.cursor = 'pointer');
+  for (const L of ['veh', 'veh-dot']) map.on('mouseleave', L, () => map.getCanvas().style.cursor = '');
   ready = true;
 });
 
-document.getElementById('route').addEventListener('input', e => { filter = e.target.value.trim().toLowerCase(); applyFilter(); });
-document.getElementById('color').addEventListener('change', e => { colorMode = e.target.value; renderLegend(); });
+document.getElementById('route').addEventListener('input', e => { fq = parseFilter(e.target.value); applyFilter(); updateRoute(true); rebuildHist(); });
+document.getElementById('color').addEventListener('change', e => { colorMode = e.target.value; renderLegend(); rebuildHist(); });
+document.getElementById('showBus').addEventListener('change', e => { typeOn.bus = e.target.checked; rebuildHist(); });
+document.getElementById('showTram').addEventListener('change', e => { typeOn.streetcar = e.target.checked; rebuildHist(); });
+document.getElementById('trails').addEventListener('change', e => { trailsOn = e.target.checked; rebuildHist(); });
+setInterval(rebuildHist, 5000);
+loadAlerts(); setInterval(loadAlerts, 60000);
 
 document.getElementById('mode').addEventListener('click', e => {
   is3D = !is3D;
@@ -202,8 +730,25 @@ document.getElementById('mode').addEventListener('click', e => {
     }, map.getLayer('lines') ? 'lines' : 'veh');
   }
   if (map.getLayer('bldg3d')) map.setLayoutProperty('bldg3d', 'visibility', is3D ? 'visible' : 'none');
+  if (map.getLayer('veh-3d')) {
+    map.setLayoutProperty('veh-3d', 'visibility', is3D && !useModels ? 'visible' : 'none');
+    for (const L of ['veh', 'veh-dot']) map.setLayerZoomRange(L, 0, is3D ? MODEL_MIN_ZOOM : 24); // flat markers only until the 3D models appear
+    if (!is3D) map.getSource('veh3d').setData(EMPTY);
+  }
   map.easeTo({ pitch: is3D ? 60 : 0, bearing: is3D ? -20 : 0, zoom: is3D ? Math.max(map.getZoom(), 14) : map.getZoom(), duration: 1200 });
 });
+
+setInterval(() => {
+  if (!ready) return;
+  try {
+    const n = map.queryRenderedFeatures({ layers: ['veh-dot'] }).length;
+    let tram = 0, bus = 0;
+    for (const v of vehicles.values()) v.kind === 'streetcar' ? tram++ : bus++;
+    const bad = Object.entries(idTrust).filter(([, ok]) => ok === false).map(([a]) => a);
+    document.getElementById('dbg').textContent = `zoom ${map.getZoom().toFixed(1)} · ${n} drawn in view\n${tram} streetcars · ${bus} buses`
+      + (bad.length ? `\n${bad.join(', ')}: vehicle ids don't look like fleet numbers, typing by route instead` : '');
+  } catch (e) { document.getElementById('dbg').textContent = 'draw check failed: ' + e.message; }
+}, 2000);
 
 renderLegend();
 refresh(); setInterval(refresh, POLL_MS / 3);
