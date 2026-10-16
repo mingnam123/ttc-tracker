@@ -75,7 +75,9 @@ async function build(a) {
   // Trips per shape, per route + direction. The most-used shape of each direction goes in the overview map;
   // every shape used by >= 15% as many trips as that (up to 3 per direction) goes in the route's own file.
   const counts = {}, heads = {}, tripShape = new Map();
+  const tripMeta = new Map(); // trip_id -> "routeKey\tdirection\theadsign", for the per-stop route/direction table
   for (const t of rows('trips.txt')) {
+    tripMeta.set(t.trip_id, `${routes[pfx(a.id, t.route_id)]?.k ?? norm(t.route_id)}\t${t.direction_id ?? ''}\t${t.trip_headsign ?? ''}`);
     if (!t.shape_id) continue;
     const k = `${t.route_id}|${t.direction_id ?? 0}`;
     (counts[k] ??= {})[t.shape_id] = (counts[k][t.shape_id] || 0) + 1;
@@ -111,7 +113,7 @@ async function build(a) {
   const stopXY = new Map(rawStops.map(s => [s.stop_id, { n: s.stop_name, p: [Number(s.stop_lon), Number(s.stop_lat)] }]));
   const stops = rawStops.map(s => ({
     type: 'Feature',
-    properties: { n: s.stop_name, a: a.id },
+    properties: { n: s.stop_name, a: a.id, k: `${a.id}:${s.stop_id}`, ...(s.stop_code ? { c: s.stop_code } : {}) },
     geometry: { type: 'Point', coordinates: [r5(s.stop_lon), r5(s.stop_lat)] },
   }));
   // Scheduled run-time profile of each pattern: mean elapsed minutes at every stop (over all its trips) and mean total
@@ -137,7 +139,21 @@ async function build(a) {
     }
     done.add(cur);
   };
+  // Which routes / directions serve each stop, and the compass direction buses leave it in (bearing to the next stop of the trip).
+  const stopRoutes = new Map(); // stop_id -> Map(tripMeta -> bearing | null)
+  let pTrip = null, pStop = null, pMeta = null;
   const haveTimes = await eachRow(zip, 'stop_times.txt', r => {
+    const meta = tripMeta.get(r.trip_id);
+    if (meta) {
+      let m = stopRoutes.get(r.stop_id); if (!m) stopRoutes.set(r.stop_id, m = new Map());
+      if (!m.has(meta)) m.set(meta, null);
+      if (pTrip === r.trip_id && pMeta) {
+        const pm = stopRoutes.get(pStop), A = stopXY.get(pStop)?.p, B = stopXY.get(r.stop_id)?.p;
+        if (pm && pm.get(pMeta) == null && A && B && km(A, B) > 0.01)
+          pm.set(pMeta, (Math.atan2((B[0] - A[0]) * Math.cos(A[1] * Math.PI / 180), B[1] - A[1]) * 180 / Math.PI + 360) % 360);
+      }
+    }
+    pTrip = r.trip_id; pStop = r.stop_id; pMeta = meta;
     if (r.trip_id !== cur) { flush(); cur = r.trip_id; curRows = []; if (done.has(cur)) { cur = null; return; } }
     curRows.push(r);
   });
@@ -173,15 +189,21 @@ async function build(a) {
   }
   // trip_id -> profile index, so a live vehicle's trip says exactly which pattern it is running
   for (const [tid, sid] of tripShape) { const pr = profileOf.get(sid); if (pr) pr[0].trips[tid] = pr[1]; }
+  const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'], stopInfo = {};
+  for (const [sid, m] of stopRoutes) {
+    const list = [...m].map(([meta, b]) => { const [k, d, h] = meta.split('\t'); return [k, h, d === '' ? null : Number(d), b == null ? null : COMPASS[Math.round(b / 45) % 8]]; })
+      .sort((x, y) => (parseInt(x[0]) || 1e9) - (parseInt(y[0]) || 1e9) || x[0].localeCompare(y[0]) || (x[2] ?? 0) - (y[2] ?? 0));
+    stopInfo[`${a.id}:${sid}`] = list;
+  }
   console.log(`[${a.id}] routes: ${Object.keys(routes).length}, lines: ${lines.length}, route files: ${Object.keys(perRoute).length}, stops: ${stops.length}`);
-  return { routes, lines, stops, perRoute };
+  return { routes, lines, stops, perRoute, stopInfo };
 }
 
-const all = { routes: {}, lines: [], stops: [], files: {} }, failed = [];
+const all = { routes: {}, lines: [], stops: [], files: {}, stopInfo: {} }, failed = [];
 for (const a of AGENCIES) {
   try {
     const d = await build(a);
-    Object.assign(all.routes, d.routes); all.lines.push(...d.lines); all.stops.push(...d.stops);
+    Object.assign(all.routes, d.routes); all.lines.push(...d.lines); all.stops.push(...d.stops); Object.assign(all.stopInfo, d.stopInfo);
     for (const [k, f] of Object.entries(d.perRoute)) all.files[`${a.id}_${k.replace(/[^a-z0-9._-]/gi, '_')}`] = f;
   } catch (err) {
     failed.push(a.id);
@@ -202,4 +224,5 @@ for (const [name, f] of Object.entries(all.files))
 out('routes.json', all.routes);
 out('shapes.geojson', { type: 'FeatureCollection', features: all.lines });
 out('stops.geojson', { type: 'FeatureCollection', features: all.stops });
+out('stopinfo.json', all.stopInfo);   // "AGENCY:stop_id" -> [[route, headsign, direction_id, leaves-towards compass], ...]; loaded on the first stop click
 console.log(`written: ${Object.keys(all.routes).length} routes, ${all.lines.length} lines, ${Object.keys(all.files).length} route files, ${all.stops.length} stops`);
