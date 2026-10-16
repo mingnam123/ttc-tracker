@@ -16,6 +16,38 @@
   #stat, #rname { margin-top: 8px; color: #aab; }
   #rname { color: #fff; font-weight: 600; white-space: pre-line; }
   #legend div { margin-top: 3px; }
+  .scard .maplibregl-popup-content { padding: 0; border-radius: 12px; overflow: hidden; min-width: 240px; box-shadow: 0 4px 18px rgba(0,0,0,.3); font-size: 12.5px; color: #223; }
+  .scard .hd { padding: 10px 12px 8px; background: #20262e; color: #fff; }
+  .scard .hd b { display: block; font-size: 14px; padding-right: 14px; }
+  .scard .hd span { color: #aab; font-size: 11.5px; }
+  .scard .bd2 { max-height: 300px; overflow: auto; padding: 4px 0; }
+  .scard .rr { padding: 6px 12px; border-top: 1px solid #eef0f3; }
+  .scard .rr:first-child { border-top: 0; }
+  .scard .rbtn { border: 0; border-radius: 5px; padding: 1px 7px; font-weight: 700; font-size: 12px; cursor: pointer; }
+  .scard .rl { margin-left: 6px; color: #556; }
+  .scard .dr { margin: 3px 0 0 2px; color: #223; display: flex; gap: 6px; }
+  .scard .dr i { font-style: normal; color: #889; min-width: 22px; font-size: 11px; }
+  .scard .ft { padding: 6px 12px 8px; color: #889; font-size: 11px; border-top: 1px solid #eef0f3; }
+  .phead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .phead h1 { margin: 0 !important; }
+  #panel .phead button { width: 26px; height: 26px; margin: 0; padding: 0; background: #2f3742; font-size: 16px; line-height: 1; flex: none; }
+  #panel.collapsed { width: auto; padding: 8px 10px; }
+  #panel.collapsed > :not(.phead) { display: none !important; }
+  #panel.collapsed h1 { font-size: 13px; }
+  #nearBtn { position: absolute; left: 12px; bottom: 28px; z-index: 2; padding: 9px 14px; border: 0; border-radius: 20px; background: rgba(20,24,30,.94); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+  #nearBtn:hover { background: #2f3742; }
+  #nearBox { position: absolute; left: 12px; bottom: 76px; z-index: 1; width: 310px; max-height: calc(100vh - 220px); overflow: auto; padding: 10px 12px; background: rgba(20,24,30,.94); border-radius: 10px; font-size: 12.5px; color: #cdd; display: none; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  #nearBox .nx { float: right; background: none; border: 0; color: #99a; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+  #nearBox .rt { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 4px; padding: 4px 6px; background: #232a33; border: 0; border-radius: 6px; color: #fff; font-size: 12px; text-align: left; cursor: pointer; }
+  #nearBox .rt:hover { background: #2f3742; }
+  #nearBox .rt .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #nearBox .rt { flex-wrap: wrap; row-gap: 1px; }
+  #nearBox .rt small { color: #99a; flex-basis: 100%; }
+  #nearBox .bd { padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 11px; color: #fff; }
+  #nearBox b { color: #fff; }
+  #nearBox .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; max-height: 96px; overflow: auto; }
+  #nearBox .chips button { width: auto; margin: 0; padding: 2px 7px; font-size: 11px; background: #2f3742; border-radius: 10px; }
+  #nearBox select { width: auto; margin: 0 0 0 6px; padding: 2px; font-size: 12px; }
   .vcard .maplibregl-popup-content { padding: 0; border-radius: 12px; overflow: hidden; min-width: 220px;
            box-shadow: 0 4px 18px rgba(0,0,0,.3); font-size: 12.5px; color: #223; }
   .vcard .maplibregl-popup-close-button { color: #fff; font-size: 18px; right: 4px; top: 4px; background: rgba(0,0,0,.28);
@@ -53,8 +85,8 @@
 </head>
 <body>
 <div id="panel">
-  <h1>TTC + YRT Live Tracker</h1>
-  <input id="route" list="routes" placeholder="TTC 504 · YRT 52 · yrt · 29">
+  <div class="phead"><h1>TTC + YRT Live Tracker</h1><button id="panelToggle" title="Collapse / expand panel" aria-label="Collapse panel">&minus;</button></div>
+  <input id="route" list="routes" placeholder="Route or agency: TTC 504, YRT" title="Type an agency, a route, or both. TTC 504 = route 504 on TTC; YRT = every YRT vehicle; 29 = route 29 on either agency. Not case-sensitive.">
   <datalist id="routes"></datalist>
   <select id="color">
     <option value="type">Colour: vehicle type</option>
@@ -74,6 +106,8 @@
   <div id="legend" style="margin-top:8px"></div>
 </div>
 <div id="map"></div>
+<button id="nearBtn" title="Zoom to your location and list the routes and vehicles nearby">&#9678; Zoom to my location</button>
+<div id="nearBox"></div>
 
 <div id="runpanel"></div>
 <div id="alertModal"><div class="sheet"></div></div>
@@ -96,7 +130,7 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl());
 map.on('error', e => console.error('map error:', e.error || e));
 
-let routes = {}, fq = null; // fq = parsed route filter {agency, short}
+let shapesData = null, routes = {}, fq = null; // fq = parsed route filter {agency, short}
 const vehicles = new Map(); // id -> {from,to,cur,bearing,route,speed,delay,occ,kind}
 let lastUpdated = null, colorMode = 'type', is3D = false, ready = false, hasStatic = false;
 
@@ -209,7 +243,7 @@ async function refresh() {
       });
     }
     for (const id of vehicles.keys()) if (!seen.has(id)) vehicles.delete(id);
-    rebuildHist();
+    rebuildHist(); updateNearby();
     if (selId && card && vehicles.has(selId)) { card.setHTML(cardHTML(selId, vehicles.get(selId))); drawRun(); }
   } catch (e) { console.error(e); document.getElementById('stat').textContent = 'Cannot reach /api/vehicles – is the server running?'; }
 }
@@ -399,7 +433,7 @@ async function loadStatic() {
   try {
     const [r, sh, st] = await Promise.all(['routes.json', 'shapes.geojson', 'stops.geojson']
       .map(f => fetch('/data/' + f).then(x => { if (!x.ok) throw new Error(f); return x.json(); })));
-    routes = r;
+    routes = r; shapesData = sh;
     const dl = document.getElementById('routes');
     Object.values(r).sort((a, b) => (a.a ?? '').localeCompare(b.a ?? '') || parseInt(a.s) - parseInt(b.s) || a.s.localeCompare(b.s))
       .forEach(x => dl.insertAdjacentHTML('beforeend', `<option value="${x.a} ${x.s}">${x.l}</option>`));
@@ -420,7 +454,9 @@ async function loadStatic() {
       'icon-allow-overlap': true, 'icon-ignore-placement': true,
       'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.7, 13, 0.9, 17, 1.2] } });
     map.addLayer({ id: 'stops', type: 'circle', source: 'stops', minzoom: 14,
-      paint: { 'circle-radius': 2.5, 'circle-color': '#fff', 'circle-stroke-color': '#444', 'circle-stroke-width': 1 } });
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 3, 17, 5.5], 'circle-color': '#fff', 'circle-stroke-color': '#444', 'circle-stroke-width': 1.2 } });
+    map.addLayer({ id: 'stop-sel', type: 'circle', source: 'stops', filter: ['==', ['get', 'k'], ''],
+      paint: { 'circle-radius': 9, 'circle-color': '#ffd54a', 'circle-opacity': 0.35, 'circle-stroke-color': '#ffb300', 'circle-stroke-width': 2.5 } });
     hasStatic = true; // route lines, names and filtering work even if stop labels can't be drawn
     try {
       map.addLayer({ id: 'stop-names', type: 'symbol', source: 'stops', minzoom: 15.5,
@@ -574,17 +610,17 @@ function drawRun() {
   const total = p.stops[p.stops.length - 1][2], dist = p.stops[p.stops.length - 1][1];
   const hereMin = here ? minutesAt(p.stops, Math.min(L.km, dist)) : null;
   // ---- chart 1: elapsed minutes vs distance ----
-  const W = 326, H = 140, ml = 30, mr = 8, mt = 8, mb = 20, iw = W - ml - mr, ih = H - mt - mb;
+  const W = 326, H = 158, ml = 44, mr = 10, mt = 8, mb = 36, iw = W - ml - mr, ih = H - mt - mb;
   const ymax = Math.max(5, Math.ceil(total / niceStep(total, 4)) * niceStep(total, 4)), X = d => ml + d / dist * iw, Y = t => mt + ih - t / ymax * ih;
   const ys = niceStep(ymax, 4), xs = niceStep(dist, 5);
   let g = '';
-  for (let t = 0; t <= ymax + 1e-9; t += ys) g += `<line x1="${ml}" x2="${W - mr}" y1="${Y(t)}" y2="${Y(t)}" stroke="#2f3742"/><text x="${ml - 4}" y="${Y(t) + 3}" text-anchor="end" fill="#99a" font-size="9">${t}</text>`;
-  for (let d = 0; d <= dist + 1e-9; d += xs) g += `<text x="${X(d)}" y="${H - 6}" text-anchor="middle" fill="#99a" font-size="9">${+d.toFixed(1)}</text>`;
+  for (let t = 0; t <= ymax + 1e-9; t += ys) g += `<line x1="${ml}" x2="${W - mr}" y1="${Y(t)}" y2="${Y(t)}" stroke="#2f3742"/><text x="${ml - 5}" y="${Y(t) + 3}" text-anchor="end" fill="#99a" font-size="9">${t}</text>`;
+  for (let d = 0; d <= dist + 1e-9; d += xs) g += `<text x="${X(d)}" y="${mt + ih + 12}" text-anchor="middle" fill="#99a" font-size="9">${+d.toFixed(1)}</text>`;
   const pts = p.stops.map(s => `${X(s[1]).toFixed(1)},${Y(s[2]).toFixed(1)}`);
   g += `<polygon points="${X(0)},${Y(0)} ${pts.join(' ')} ${X(dist)},${Y(0)}" fill="#1f8a4c" opacity=".22"/><polyline points="${pts.join(' ')}" fill="none" stroke="#3ddc84" stroke-width="2"/>`;
   g += p.stops.map(s => `<circle cx="${X(s[1]).toFixed(1)}" cy="${Y(s[2]).toFixed(1)}" r="1.8" fill="#3ddc84"/>`).join('');
   if (here) g += `<line x1="${X(L.km)}" x2="${X(L.km)}" y1="${mt}" y2="${mt + ih}" stroke="#ffd54a" stroke-dasharray="3 3"/><circle cx="${X(L.km)}" cy="${Y(hereMin)}" r="4.5" fill="#ffd54a" stroke="#111"/>`;
-  g += `<line id="rhov" x1="0" x2="0" y1="${mt}" y2="${mt + ih}" stroke="#fff" opacity="0"/><text x="1" y="${mt + 3}" fill="#99a" font-size="8">min</text><text x="${W - mr}" y="${H - 6}" text-anchor="end" fill="#99a" font-size="9">km</text>`;
+  g += `<line id="rhov" x1="0" x2="0" y1="${mt}" y2="${mt + ih}" stroke="#fff" opacity="0"/><text x="${ml + iw / 2}" y="${H - 4}" text-anchor="middle" fill="#bcc" font-size="10">Distance from start (km)</text><text transform="translate(10 ${mt + ih / 2}) rotate(-90)" text-anchor="middle" fill="#bcc" font-size="10">Elapsed time (min)</text>`;
   // ---- chart 2: mean scheduled run time by hour of departure ----
   const hw = 326, hh = 62, hmax = Math.max(...p.hours.map(h => h[1]), 1), hnow = new Date().getHours();
   const bars = p.hours.map(([h, m, n]) => `<rect x="${(h * hw / 24 + 1).toFixed(1)}" y="${(hh - 14 - m / hmax * (hh - 20)).toFixed(1)}" width="${(hw / 24 - 2).toFixed(1)}" height="${(m / hmax * (hh - 20)).toFixed(1)}" rx="1.5" fill="${h === hnow ? '#ffd54a' : '#3a8f66'}"><title>${String(h).padStart(2, '0')}:00 – ${Math.round(m)} min (${n} trips)</title></rect>`).join('');
@@ -701,12 +737,153 @@ map.on('load', async () => {
   });
   map.on('click', e => {
     if (useModels && is3D) { const id = pickModel(e.point); if (id) return selectVehicle(id); }
-    if (!map.queryRenderedFeatures(e.point, { layers: ['veh', 'veh-dot', 'veh-3d'] }).length) clearSelection();
+    if (map.queryRenderedFeatures(e.point, { layers: ['veh', 'veh-dot', 'veh-3d'] }).length) return;
+    clearSelection();
+    const pad = 9, hit = map.getLayer('stops') && map.queryRenderedFeatures([[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]], { layers: ['stops'] });
+    if (hit && hit.length) {                                  // nearest stop to the click
+      const f = hit.reduce((b, c) => { const d = p => Math.hypot(map.project(p.geometry.coordinates).x - e.point.x, map.project(p.geometry.coordinates).y - e.point.y); return d(c) < d(b) ? c : b; });
+      openStop(f);
+    } else closeStop();
   });
+  map.on('mousemove', e => { if (!(useModels && is3D) && map.getLayer('stops')) { const h = map.queryRenderedFeatures([[e.point.x - 7, e.point.y - 7], [e.point.x + 7, e.point.y + 7]], { layers: ['stops', 'veh', 'veh-dot'] }); map.getCanvas().style.cursor = h.length ? 'pointer' : ''; } });
   for (const L of ['veh', 'veh-dot']) map.on('mouseenter', L, () => map.getCanvas().style.cursor = 'pointer');
   for (const L of ['veh', 'veh-dot']) map.on('mouseleave', L, () => map.getCanvas().style.cursor = '');
   ready = true;
 });
+
+// ---- stop card: which routes and directions serve the clicked stop ----
+let stopPop = null, stopInfoP = null;
+const loadStopInfo = () => stopInfoP ??= fetch('/data/stopinfo.json').then(r => { if (!r.ok) throw new Error('stopinfo'); return r.json(); }).catch(() => null);
+function closeStop() { if (stopPop) { const p = stopPop; stopPop = null; p.remove(); } if (map.getLayer('stop-sel')) map.setFilter('stop-sel', ['==', ['get', 'k'], '']); }
+async function openStop(f) {
+  const pr = f.properties, key = pr.k;
+  closeStop();
+  map.setFilter('stop-sel', ['==', ['get', 'k'], key]);
+  const pop = new maplibregl.Popup({ className: 'scard', closeOnClick: false, offset: 12, maxWidth: '320px' })
+    .setLngLat(f.geometry.coordinates).setHTML(`<div class="hd"><b>${esc(pr.n)}</b><span>${esc(pr.a)}${pr.c ? ' · Stop ' + esc(pr.c) : ''}</span></div><div class="ft">Loading routes…</div>`).addTo(map);
+  stopPop = pop;
+  pop.on('close', () => { if (stopPop === pop) { stopPop = null; map.setFilter('stop-sel', ['==', ['get', 'k'], '']); } });
+  const info = await loadStopInfo();
+  if (stopPop !== pop) return;
+  const list = info?.[key];
+  if (!list) { pop.setHTML(`<div class="hd"><b>${esc(pr.n)}</b><span>${esc(pr.a)}${pr.c ? ' · Stop ' + esc(pr.c) : ''}</span></div><div class="ft">No route list for this stop. Re-run: npm run build-data</div>`); return; }
+  const byRoute = new Map();
+  for (const [k, head, dir, cmp] of list) { if (!byRoute.has(k)) byRoute.set(k, []); byRoute.get(k).push({ head, dir, cmp }); }
+  const rows = [...byRoute].map(([k, ds]) => {
+    const r = Object.values(routes).find(x => x.a === pr.a && kOf(x) === k);
+    const bg = r?.c ?? (pr.a === 'YRT' ? '#14b8a6' : r?.t === '0' ? '#da291c' : '#2b8cff'), fg = r?.x ?? '#fff', seen = new Set();
+    const lines = ds.filter(d => { const q = d.head + '|' + d.dir; if (seen.has(q)) return false; seen.add(q); return true; })
+      .map(d => `<div class="dr"><i>${d.cmp && !/\b(NB|SB|EB|WB|north|south|east|west)\b/i.test(d.head) ? '→ ' + d.cmp : ''}</i><span>${d.head ? esc(d.head) : 'Terminus'}</span></div>`).join('');
+    return `<div class="rr"><button class="rbtn" data-stoproute="${esc(pr.a + ' ' + k)}" style="background:${esc(bg)};color:${esc(fg)}" title="Show this route">${esc(pr.a)} ${esc(k.toUpperCase())}</button><span class="rl">${esc(r?.l ?? '')}</span>${lines}</div>`;
+  }).join('');
+  pop.setHTML(`<div class="hd"><b>${esc(pr.n)}</b><span>${esc(pr.a)}${pr.c ? ' · Stop ' + esc(pr.c) : ''} · ${byRoute.size} route${byRoute.size === 1 ? '' : 's'}</span></div><div class="bd2">${rows || '<div class="rr">No scheduled service.</div>'}</div><div class="ft">Scheduled service (GTFS). Click a route to show it on the map.</div>`);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-stoproute]'); if (!b) return;
+  const inp = document.getElementById('route'); inp.value = b.dataset.stoproute; inp.dispatchEvent(new Event('input'));
+});
+
+// ---- panel collapse ----
+(() => {
+  const panel = document.getElementById('panel'), btn = document.getElementById('panelToggle');
+  const set = c => { panel.classList.toggle('collapsed', c); btn.innerHTML = c ? '+' : '&minus;'; btn.setAttribute('aria-label', c ? 'Expand panel' : 'Collapse panel'); try { localStorage.setItem('panelCollapsed', c ? '1' : '0'); } catch (e) {} };
+  btn.onclick = () => set(!panel.classList.contains('collapsed'));
+  try { if (localStorage.getItem('panelCollapsed') === '1') set(true); } catch (e) {}
+})();
+
+// ---- nearby: zoom to the user's location, count vehicles and routes within a radius ----
+let nearPt = null, nearR = 500, nearNote = '';
+const nearBox = document.getElementById('nearBox');
+function nearCircle() {
+  const [x, y] = nearPt, pts = [];
+  for (let a = 0; a <= 64; a++) { const t = a / 64 * 2 * Math.PI; pts.push([x + nearR * Math.cos(t) / (111320 * Math.cos(y * Math.PI / 180)), y + nearR * Math.sin(t) / 111320]); }
+  return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [pts] } }, { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: nearPt } }] };
+}
+function ensureNearLayers() {
+  if (map.getSource('near')) return;
+  map.addSource('near', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'near-fill', type: 'fill', source: 'near', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#2b8cff', 'fill-opacity': 0.08 } });
+  map.addLayer({ id: 'near-line', type: 'line', source: 'near', filter: ['==', '$type', 'Polygon'], paint: { 'line-color': '#2b8cff', 'line-width': 2, 'line-dasharray': [2, 2] } });
+  map.addLayer({ id: 'near-dot', type: 'circle', source: 'near', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 7, 'circle-color': '#2b8cff', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
+}
+// Routes whose scheduled line passes within the radius (static data, so it works even when no vehicle is running), nearest first.
+let nearRoutes = [], nearKey = '';
+function distToLine(pt, coords) {                       // metres from pt to a polyline (local flat projection)
+  const kx = 111320 * Math.cos(pt[1] * Math.PI / 180), ky = 111320;
+  let best = Infinity;
+  for (let q = 1; q < coords.length; q++) {
+    const ax = (coords[q - 1][0] - pt[0]) * kx, ay = (coords[q - 1][1] - pt[1]) * ky, bx = (coords[q][0] - pt[0]) * kx, by = (coords[q][1] - pt[1]) * ky;
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+    const d = Math.hypot(ax + t * dx, ay + t * dy); if (d < best) best = d;
+  }
+  return best;
+}
+function computeNearRoutes() {
+  const key = nearPt.join(',') + '|' + nearR + '|' + (shapesData ? 1 : 0); if (key === nearKey) return; nearKey = key;
+  const out = new Map(), pad = nearR / 111320 * 1.5;
+  for (const f of shapesData?.features ?? []) {
+    const g = f.geometry, lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+    const a = f.properties.a, k = f.properties.k ?? norm(f.properties.s), id = a + ' ' + k;
+    for (const c of lines) {
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;     // cheap bounding-box reject before the exact distance
+      for (const q of c) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; }
+      if (nearPt[0] < x0 - pad * 1.5 || nearPt[0] > x1 + pad * 1.5 || nearPt[1] < y0 - pad || nearPt[1] > y1 + pad) continue;
+      const d = distToLine(nearPt, c); if (d > nearR) continue;
+      const e = out.get(id); if (!e || d < e.d) out.set(id, { a, k, s: f.properties.s, t: f.properties.t, d });
+    }
+  }
+  nearRoutes = [...out.values()].sort((x, y) => x.d - y.d);
+}
+function updateNearby() {
+  if (!nearPt) return;
+  try { ensureNearLayers(); map.getSource('near').setData(nearCircle()); } catch (e) { /* style not ready yet; next refresh retries */ }
+  computeNearRoutes();
+  const live = new Map(), by = {};
+  for (const v of vehicles.values()) {
+    if (metres(nearPt, v.cur) > nearR) continue;
+    const kk = `${v.agency} ${v.kind === 'streetcar' ? 'streetcar' : 'bus'}`; by[kk] = (by[kk] || 0) + 1;
+  }
+  for (const v of vehicles.values()) {                                                // vehicles running on the route anywhere, and the closest one to you
+    const kk = `${v.agency} ${shortOf(v)}`, d = metres(nearPt, v.cur), e = live.get(kk) ?? { n: 0, d: Infinity, pos: null };
+    e.n++; if (d < e.d) { e.d = d; e.pos = v.cur; } live.set(kk, e);
+  }
+  const nIn = Object.values(by).reduce((x, y) => x + y, 0);
+  nearBox.style.display = 'block';
+  nearBox.innerHTML = `<button class="nx" data-nearclose title="Close">×</button><b>${nearRoutes.length}</b> route${nearRoutes.length === 1 ? '' : 's'} within
+    <select id="nearR">${[250, 500, 1000, 2000].map(r => `<option value="${r}"${r === nearR ? ' selected' : ''}>${r >= 1000 ? r / 1000 + ' km' : r + ' m'}</option>`).join('')}</select>
+    <div style="margin-top:3px;color:#99a">${nIn} vehicle${nIn === 1 ? '' : 's'} nearby now${Object.keys(by).length ? ': ' + Object.entries(by).map(([k, n]) => `${n} ${k}`).join(' · ') : ''}</div>` +
+    (nearRoutes.map(r => {
+      const i = routes[Object.keys(routes).find(id => routes[id].a === r.a && kOf(routes[id]) === r.k)] ?? null, lv = live.get(r.a + ' ' + r.k), n = lv?.n ?? 0;
+      const col = i?.c ?? (r.a === 'YRT' ? '#14b8a6' : r.t === '0' ? '#da291c' : '#2b8cff');
+      return `<button class="rt" data-nearroute="${esc(r.a + ' ' + r.k)}" ${lv ? `data-lon="${lv.pos[0]}" data-lat="${lv.pos[1]}"` : ''} title="${esc(i?.l ?? '')}"><span class="bd" style="background:${esc(col)}">${esc(r.a)} ${esc(r.k.toUpperCase())}</span><span class="nm">${esc(i?.l ?? '')}</span><small>${Math.round(r.d / 10) * 10} m away · ${n ? `${n} live, nearest ${lv.d < 1000 ? Math.round(lv.d / 10) * 10 + ' m' : (lv.d / 1000).toFixed(1) + ' km'}` : 'none live'}</small></button>`;
+    }).join('') || '<div style="margin-top:6px;color:#99a">No routes pass within this radius.</div>') +
+    (nearNote ? `<div style="margin-top:6px;color:#e6b800">${esc(nearNote)}</div>` : '');
+}
+nearBox.addEventListener('change', e => { if (e.target.id === 'nearR') { nearR = Number(e.target.value); updateNearby(); } });
+nearBox.addEventListener('click', e => {
+  if (e.target.closest('[data-nearclose]')) { nearBox.style.display = 'none'; nearPt = null; try { map.getSource('near').setData(EMPTY); } catch (x) {} return; }
+  const b = e.target.closest('[data-nearroute]'); if (!b) return;
+  const inp = document.getElementById('route'); inp.value = b.dataset.nearroute;
+  fq = parseFilter(inp.value); applyFilter(); updateRoute(false); rebuildHist();
+  if (b.dataset.lon) {                                  // frame you and the closest live vehicle of that route
+    const v = [Number(b.dataset.lon), Number(b.dataset.lat)], bb = new maplibregl.LngLatBounds(nearPt, nearPt).extend(v);
+    map.fitBounds(bb, { padding: { top: 90, right: 90, bottom: 110, left: 330 }, maxZoom: 16, duration: 800 });
+  }
+});
+function goNearby(pt, note) {
+  nearPt = pt; nearNote = note || ''; updateNearby();
+  map.flyTo({ center: pt, zoom: nearR <= 500 ? 15.5 : 14.5, duration: 900 });
+}
+function locateMe(auto) {
+  const centre = () => [map.getCenter().lng, map.getCenter().lat];
+  if (!navigator.geolocation) return auto || goNearby(centre(), 'Location is not available in this browser, so the map centre is used.');
+  navigator.geolocation.getCurrentPosition(
+    p => goNearby([p.coords.longitude, p.coords.latitude]),
+    err => auto || goNearby(centre(), 'Could not get your location (' + err.message + '), so the map centre is used.'),   // on load, stay quiet and keep the default view
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+}
+document.getElementById('nearBtn').onclick = () => locateMe(false);
+map.once('load', () => locateMe(true));   // zoom to the user's location when the page first loads
 
 document.getElementById('route').addEventListener('input', e => { fq = parseFilter(e.target.value); applyFilter(); updateRoute(true); rebuildHist(); });
 document.getElementById('color').addEventListener('change', e => { colorMode = e.target.value; renderLegend(); rebuildHist(); });
