@@ -26,6 +26,21 @@ export const AGENCIES = [
   },
 ];
 
+// GO Transit (Metrolinx Open Data API). Enabled because a key is set (below).
+const GO_KEY = process.env.GO_API_KEY || '30030781';   // your Metrolinx key; an environment variable GO_API_KEY overrides it
+const GO_BASE = 'https://api.openmetrolinx.com/OpenDataAPI/api/V1';
+if (GO_KEY) AGENCIES.push({
+  id: 'GO',
+  // The API has no static GTFS. Metrolinx publishes the schedule zip on its open-data page; if this default URL is wrong, download
+  // the zip there and run: node build-data.js GO=path/to/GO-GTFS.zip
+  staticZip: process.env.GO_STATIC_ZIP || 'https://assets.metrolinx.com/raw/upload/Documents/Metrolinx/Open%20Data/GO-GTFS.zip',
+  // A list: tried in order, the first that answers is used. The plain feed answered 401 for one key, so the occupancy variant is the backup.
+  vehicles: process.env.GO_VEHICLES_URL ? [process.env.GO_VEHICLES_URL] : [`${GO_BASE}/Gtfs/Feed/VehiclePosition?key=${GO_KEY}`, `${GO_BASE}/Fleet/Occupancy/GtfsRT/Feed/VehiclePosition?key=${GO_KEY}`],
+  trips: process.env.GO_TRIPS_URL || `${GO_BASE}/Gtfs/Feed/TripUpdates?key=${GO_KEY}`,
+  alerts: process.env.GO_ALERTS_URL || `${GO_BASE}/Gtfs/Feed/Alerts?key=${GO_KEY}`,
+});
+
+
 // Vehicle type from the feed's vehicle.id (the fleet number painted on the vehicle).
 // TTC streetcar fleet numbers (CPTDB / Transit Toronto rosters): CLRV 4000-4005 & 4010-4199, ALRV 4200-4251
 // (both retired in 2019), Flexity 4400-4663. No TTC bus uses 4000-4999, so that whole block means "streetcar";
