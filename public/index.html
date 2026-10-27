@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TTC + YRT Live Tracker</title>
+<title>GTA Transit Live Tracker</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <style>
   html, body, #map { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
@@ -85,7 +85,7 @@
 </head>
 <body>
 <div id="panel">
-  <div class="phead"><h1>TTC + YRT Live Tracker</h1><button id="panelToggle" title="Collapse / expand panel" aria-label="Collapse panel">&minus;</button></div>
+  <div class="phead"><h1>GTA Transit Live Tracker</h1><button id="panelToggle" title="Collapse / expand panel" aria-label="Collapse panel">&minus;</button></div>
   <input id="route" list="routes" placeholder="Route or agency: TTC 504, YRT" title="Type an agency, a route, or both. TTC 504 = route 504 on TTC; YRT = every YRT vehicle; 29 = route 29 on either agency. Not case-sensitive.">
   <datalist id="routes"></datalist>
   <select id="color">
@@ -93,6 +93,8 @@
     <option value="delay">Colour: delay</option>
     <option value="crowd">Colour: crowding</option>
   </select>
+  <label style="display:block;margin-top:8px;cursor:pointer" title="Estimated from how fast vehicles are moving on each stop-to-stop stretch"><input type="checkbox" id="traffic" style="width:auto;margin:0 6px 0 0;vertical-align:middle">Traffic estimate</label>
+  <div id="trafficKey" style="display:none;margin:4px 0 0 22px;font-size:11.5px;color:#aab"><span style="color:#2fbf71">&#9632;</span> smooth &nbsp;<span style="color:#f5a623">&#9632;</span> slow &nbsp;<span style="color:#e5392b">&#9632;</span> heavy &nbsp;<span style="opacity:.6">(faded = still learning)</span><div id="trafficMsg" style="margin-top:2px"></div></div>
   <label style="display:block;margin-top:8px;cursor:pointer"><input type="checkbox" id="trails" checked style="width:auto;margin:0 6px 0 0;vertical-align:middle">Motion trails</label>
   <div style="margin-top:8px;display:flex;gap:14px">
     <label style="cursor:pointer"><input type="checkbox" id="showBus" checked style="width:auto;margin:0 6px 0 0;vertical-align:middle">Buses</label>
@@ -103,7 +105,6 @@
   <div id="stat">Loading…</div>
   <div id="agencies" style="margin-top:4px;color:#aab;font-size:12px;white-space:pre-line"></div>
   <div id="dbg" style="margin-top:4px;color:#778;font-size:11px;white-space:pre-line"></div>
-  <div id="legend" style="margin-top:8px"></div>
 </div>
 <div id="map"></div>
 <button id="nearBtn" title="Zoom to your location and list the routes and vehicles nearby">&#9678; Zoom to my location</button>
@@ -118,7 +119,7 @@
 const POLL_MS = 15000;
 const GREY = '#8a8f98';
 const PALETTES = {
-  type: [['TTC streetcar', '#da291c'], ['TTC bus', '#2b8cff'], ['YRT bus', '#14b8a6'], ['Other', '#b0a0d0']],
+  type: [['TTC streetcar', '#da291c'], ['TTC bus', '#2b8cff'], ['YRT bus', '#14b8a6'], ['GO', '#00a651'], ['Other', '#b0a0d0']],
   delay: [['Early (>1 min)', '#4aa8ff'], ['On time (≤2 min late)', '#2fbf71'], ['2–5 min late', '#f5a623'], ['>5 min late', '#e5392b'], ['No data', GREY]],
   crowd: [['Empty / many seats', '#2fbf71'], ['Few seats', '#e6d44a'], ['Standing room', '#f5a623'], ['Crushed / full', '#e5392b'], ['No data', GREY]],
 };
@@ -192,16 +193,12 @@ function colorOf(v) {
     if (o == null || o > 5) return GREY;
     return o <= 1 ? '#2fbf71' : o === 2 ? '#e6d44a' : o === 3 ? '#f5a623' : '#e5392b';
   }
-  return v.kind === 'streetcar' ? '#da291c' : v.agency === 'YRT' ? '#14b8a6' : v.kind === 'bus' ? '#2b8cff' : '#b0a0d0';
+  return v.kind === 'streetcar' ? '#da291c' : v.agency === 'YRT' ? '#14b8a6' : v.agency === 'GO' ? '#00a651' : v.kind === 'bus' ? '#2b8cff' : '#b0a0d0';
 }
 
 const BUS_SVG = '<svg width="14" height="14" viewBox="0 0 48 48" style="vertical-align:middle;margin-right:6px"><polygon points="24,3 40,42 24,33 8,42" fill="#ccd" stroke="#111" stroke-width="3"/></svg>';
 const TRAM_SVG = '<svg width="14" height="14" viewBox="0 0 28 68" style="vertical-align:middle;margin-right:6px"><polygon points="14,2 25,15 25,66 3,66 3,15" fill="#ccd" stroke="#111" stroke-width="3"/><line x1="3" y1="38" x2="25" y2="38" stroke="#111" stroke-width="3"/></svg>';
-function renderLegend() {
-  document.getElementById('legend').innerHTML = PALETTES[colorMode]
-    .map(([l, c]) => `<div><span class="dot" style="background:${c}"></span>${l}</div>`).join('')
-    + `<div style="margin-top:8px;color:#aab">Shape</div><div>${BUS_SVG}Bus</div><div>${TRAM_SVG}Streetcar</div>`;
-}
+function renderLegend() { /* legend removed from the panel */ }
 
 function showAgencies(a) {
   if (!a) return;
@@ -439,10 +436,16 @@ async function loadStatic() {
       .forEach(x => dl.insertAdjacentHTML('beforeend', `<option value="${x.a} ${x.s}">${x.l}</option>`));
     map.addSource('lines', { type: 'geojson', data: sh });
     map.addSource('stops', { type: 'geojson', data: st });
-    const lc = ['case', ['==', ['get', 'a'], 'YRT'], '#14b8a6', ['match', ['get', 't'], '0', '#da291c', '3', '#2b8cff', '#b0a0d0']];
+    const lc = ['case', ['==', ['get', 'a'], 'YRT'], '#14b8a6', ['==', ['get', 'a'], 'GO'], '#00a651', ['match', ['get', 't'], '0', '#da291c', '3', '#2b8cff', '#b0a0d0']];
     map.addLayer({ id: 'lines', type: 'line', source: 'lines', paint: { 'line-color': lc, 'line-width': 1, 'line-opacity': 0.35 } });
     map.addLayer({ id: 'lines-hi', type: 'line', source: 'lines', filter: ['==', ['get', 'id'], ''],
       paint: { 'line-color': lc, 'line-width': 4, 'line-opacity': 0.9 } });
+    // Traffic estimate: coloured stretches, filled from /api/traffic while the checkbox is on
+    map.addSource('traffic', { type: 'geojson', data: EMPTY });
+    map.addLayer({ id: 'traffic', type: 'line', source: 'traffic', layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'none' },
+      paint: { 'line-color': ['match', ['get', 'l'], 'smooth', '#2fbf71', 'slow', '#f5a623', '#e5392b'],
+               'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 5, 17, 9],
+               'line-opacity': ['case', ['==', ['get', 'p'], 1], 0.55, 0.92] } });
     // Geometry of the selected / filtered route, loaded on demand from /data/route/<AGENCY>_<route>.json
     map.addSource('route-sel', { type: 'geojson', data: EMPTY });
     map.addLayer({ id: 'route-case', type: 'line', source: 'route-sel', layout: { 'line-join': 'round', 'line-cap': 'round' },
@@ -541,7 +544,7 @@ function cardHTML(id, v) {
     (selMissing ? '<div style="margin-top:6px;color:#a3281e;font-size:11px">No route line for this route in the static data. Re-run: npm run build-data</div>' : '') + '</div>';
 }
 const luma = h => { const n = parseInt(String(h).replace('#', ''), 16) || 0; return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; };
-const colorOf0 = v => v.kind === 'streetcar' ? '#c8281d' : v.agency === 'YRT' ? '#0f9488' : '#2468c9'; // header colour: by type, not by the colour mode
+const colorOf0 = v => v.kind === 'streetcar' ? '#c8281d' : v.agency === 'YRT' ? '#0f9488' : v.agency === 'GO' ? '#00853f' : '#2468c9'; // header colour: by type, not by the colour mode
 function selectVehicle(id) {
   const v = vehicles.get(id);
   if (!v) return;
@@ -740,6 +743,16 @@ map.on('load', async () => {
     if (map.queryRenderedFeatures(e.point, { layers: ['veh', 'veh-dot', 'veh-3d'] }).length) return;
     clearSelection();
     const pad = 9, hit = map.getLayer('stops') && map.queryRenderedFeatures([[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]], { layers: ['stops'] });
+    const tr = !(hit && hit.length) && map.getLayer('traffic') && map.getLayoutProperty('traffic', 'visibility') === 'visible'
+      ? map.queryRenderedFeatures([[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]], { layers: ['traffic'] }) : [];
+    if (tr.length) {                                          // traffic stretch: say what it is based on
+      const t = tr[0].properties, L = { smooth: 'Smooth', slow: 'Slow', heavy: 'Heavy traffic' }[t.l];
+      if (stopPop) closeStop();
+      new maplibregl.Popup({ closeOnClick: true, offset: 8, maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(
+        `<b>${L}</b><div style="margin-top:3px">Vehicles are moving about <b>${t.v} km/h</b>${t.u ? ` (usually ~${t.u} km/h here)` : ''}.</div>` +
+        `<div style="margin-top:4px;color:#778;font-size:11.5px">${t.p ? 'Not enough history on this stretch yet, so this uses fixed speed thresholds.' : 'Compared with the usual free-flow speed learned for this stretch.'} Based on ~${Math.round(t.n)} recent vehicle reports; stops are excluded.</div>`).addTo(map);
+      return;
+    }
     if (hit && hit.length) {                                  // nearest stop to the click
       const f = hit.reduce((b, c) => { const d = p => Math.hypot(map.project(p.geometry.coordinates).x - e.point.x, map.project(p.geometry.coordinates).y - e.point.y); return d(c) < d(b) ? c : b; });
       openStop(f);
@@ -749,6 +762,24 @@ map.on('load', async () => {
   for (const L of ['veh', 'veh-dot']) map.on('mouseenter', L, () => map.getCanvas().style.cursor = 'pointer');
   for (const L of ['veh', 'veh-dot']) map.on('mouseleave', L, () => map.getCanvas().style.cursor = '');
   ready = true;
+});
+
+// ---- traffic estimate toggle ----
+let trafficTimer = null;
+async function loadTraffic() {
+  const msg = document.getElementById('trafficMsg');
+  try {
+    const g = await (await fetch('/api/traffic')).json();
+    map.getSource('traffic')?.setData(g);
+    const n = g.features.length, c = { smooth: 0, slow: 0, heavy: 0 }; g.features.forEach(f => c[f.properties.l]++);
+    msg.textContent = n ? `${n} stretches: ${c.smooth} smooth · ${c.slow} slow · ${c.heavy} heavy` : 'Collecting vehicle speeds… give it a few minutes.';
+  } catch (e) { msg.textContent = 'Traffic data unavailable (is the server updated?)'; }
+}
+document.getElementById('traffic').addEventListener('change', e => {
+  const on = e.target.checked;
+  document.getElementById('trafficKey').style.display = on ? 'block' : 'none';
+  if (map.getLayer('traffic')) map.setLayoutProperty('traffic', 'visibility', on ? 'visible' : 'none');
+  clearInterval(trafficTimer); if (on) { loadTraffic(); trafficTimer = setInterval(loadTraffic, 30000); }
 });
 
 // ---- stop card: which routes and directions serve the clicked stop ----
