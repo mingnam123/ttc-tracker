@@ -101,15 +101,45 @@ async function pollAlerts(a) {
   }
 }
 
+// Speed for vehicles whose feed does not report one (GO, and any other feed without it): distance moved / time between two position
+// reports of the same vehicle, lightly smoothed. A report counts only when its timestamp changed; a long gap restarts the estimate.
+const speedMem = new Map();
+function deriveSpeeds(vehicles) {
+  const now = Date.now();
+  for (const v of vehicles) {
+    const ts = v.ts ?? Math.floor(now / 1000), m = speedMem.get(v.id), put = sp => speedMem.set(v.id, { lat: v.lat, lon: v.lon, ts, v: sp, seen: now });
+    if (v.speed != null) { put(v.speed); continue; }                          // the feed gave a speed (or GO said "not in motion" = 0)
+    if (!m) { put(null); continue; }
+    if (ts > m.ts) {                                                          // a new position report
+      const dt = ts - m.ts, kx = 111320 * Math.cos(v.lat * Math.PI / 180), d = Math.hypot((v.lon - m.lon) * kx, (v.lat - m.lat) * 111320);
+      if (dt >= 3 && dt <= 180) {
+        const raw = d / dt, sp = raw > 45 ? m.v : m.v == null ? raw : 0.5 * m.v + 0.5 * raw;   // ignore GPS jumps (> 160 km/h)
+        put(sp); if (sp != null) { v.speed = sp; v.speedEst = true; }
+      } else put(null);                                                       // too long a gap: restart the estimate
+    } else if (m.v != null) { v.speed = m.v; v.speedEst = true; }              // same report as last poll: keep the estimate
+  }
+  for (const [id, m] of speedMem) if (now - m.seen > 600000) speedMem.delete(id);
+}
+
 async function pollVehicles(a) {
   if (!a.vehicles) return;
   const st = state[a.id];
   try {
-    let feed, lastErr;
-    for (const u of [].concat(a.vehicles)) { try { feed = await getFeed(u); break; } catch (e) { lastErr = e; } }   // first URL that works
-    if (!feed) throw lastErr;
-    const vehicles = [];
-    for (const e of feed.entity) {
+    let feed, lastErr, vehicles = [];
+    if (!(a.glance && a._glanceUntil > Date.now())) {                               // (after a refusal, skip the real-time feed for a while)
+      for (const u of [].concat(a.vehicles)) { try { feed = await getFeed(u); break; } catch (e) { lastErr = e; } }   // first URL that works
+    }
+    if (!feed && a.glance) {                                                         // fallback: positions from GO "Service at a Glance"
+      if (lastErr) { a._glanceUntil = Date.now() + 10 * 60000; console.warn(`[${a.id}] vehicle feed refused (${lastErr.message}); using Service at a Glance instead`); }
+      const got = await Promise.allSettled(a.glance.map(async g => {                 // trains and buses are separate endpoints
+        const r = await fetch(g.url, { signal: AbortSignal.timeout(10000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status} from ${g.url.split('?')[0]}`);
+        return glanceVehicles(a.id, await r.json(), g.kind);
+      }));
+      got.forEach(x => { if (x.status === 'fulfilled') vehicles.push(...x.value); else console.error(`[${a.id}] ${x.reason.message}`); });
+      if (!vehicles.length && got.every(x => x.status === 'rejected')) throw got[0].reason;
+    } else if (!feed) throw lastErr;
+    for (const e of feed?.entity ?? []) {
       const v = e.vehicle;
       if (!v?.position) continue;
       vehicles.push({
@@ -127,11 +157,12 @@ async function pollVehicles(a) {
         ts: Number(v.timestamp) || null,
       });
     }
+    deriveSpeeds(vehicles);
     st.vehicles = vehicles; st.updated = Date.now(); st.error = null;
     const used = traffic.observe(vehicles);
-    const n = { streetcar: 0, bus: 0, unknown: 0 };
+    const n = { streetcar: 0, bus: 0, train: 0, unknown: 0 };
     for (const v of vehicles) n[v.type ?? 'unknown']++;
-    console.log(`[${a.id}] polled ${vehicles.length} vehicles (${n.streetcar} streetcars, ${n.bus} buses, ${n.unknown} unknown type), ${st.delays.size} delay records`);
+    console.log(`[${a.id}] polled ${vehicles.length} vehicles (${n.streetcar} streetcars, ${n.bus} buses, ${n.train} trains, ${n.unknown} unknown type), ${st.delays.size} delay records`);
   } catch (err) {
     st.error = err.message; // keep this agency's last good vehicles
     console.error(`[${a.id}] vehicle poll failed:`, err.message);
@@ -152,7 +183,7 @@ app.get('/api/vehicles', (_req, res) => {
   let updated = null;
   for (const a of AGENCIES) {
     const st = state[a.id];
-    for (const v of st.vehicles) vehicles.push({ ...v, delay: v.trip && st.delays.has(v.trip) ? st.delays.get(v.trip) : null });
+    for (const v of st.vehicles) vehicles.push({ ...v, delay: v.delay ?? (v.trip && st.delays.has(v.trip) ? st.delays.get(v.trip) : null) });
     agencies[a.id] = { count: st.vehicles.length, updated: st.updated, error: st.error };
     if (st.updated && (!updated || st.updated > updated)) updated = st.updated;
   }

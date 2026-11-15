@@ -36,6 +36,8 @@ if (GO_KEY) AGENCIES.push({
   staticZip: process.env.GO_STATIC_ZIP || 'https://assets.metrolinx.com/raw/upload/Documents/Metrolinx/Open%20Data/GO-GTFS.zip',
   // A list: tried in order, the first that answers is used. The plain feed answered 401 for one key, so the occupancy variant is the backup.
   vehicles: process.env.GO_VEHICLES_URL ? [process.env.GO_VEHICLES_URL] : [`${GO_BASE}/Gtfs/Feed/VehiclePosition?key=${GO_KEY}`, `${GO_BASE}/Fleet/Occupancy/GtfsRT/Feed/VehiclePosition?key=${GO_KEY}`],
+  // Fallback when the vehicle-position feed above is refused for the key: every in-service train and bus with its position (see go-glance.js).
+  glance: [{ kind: 'train', url: `${GO_BASE}/ServiceataGlance/Trains/All?key=${GO_KEY}` }, { kind: 'bus', url: `${GO_BASE}/ServiceataGlance/Buses/All?key=${GO_KEY}` }],
   trips: process.env.GO_TRIPS_URL || `${GO_BASE}/Gtfs/Feed/TripUpdates?key=${GO_KEY}`,
   alerts: process.env.GO_ALERTS_URL || `${GO_BASE}/Gtfs/Feed/Alerts?key=${GO_KEY}`,
 });
