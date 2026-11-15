@@ -55,7 +55,7 @@
 
   // Choose the family from the roster string ("Nova Bus LFS · Hybrid · 12 m · 2023") and the vehicle kind.
   function specFor(v) {
-    const m = String(v.model || ''), kind = v.kind || (/Streetcar|Flexity|CLRV|ALRV/i.test(m) ? 'streetcar' : 'bus');
+    const m = String(v.model || ''), kind = v.kind === 'train' ? 'streetcar' : v.kind || (/Streetcar|Flexity|CLRV|ALRV/i.test(m) ? 'streetcar' : 'bus');   // GO trains: drawn with the long articulated body
     const len = Number((/(\d+(?:\.\d+)?)\s*m\b/.exec(m) || [])[1]) || 0;
     const prop = /Electric/i.test(m) ? 'electric' : /Hybrid/i.test(m) ? 'hybrid' : /Diesel/i.test(m) ? 'diesel' : /Gasoline/i.test(m) ? 'gas' : /Streetcar/i.test(m) ? 'electric' : 'diesel';
     let f;
@@ -70,8 +70,8 @@
     else if (/Proterra|BE40/i.test(m)) f = 'proterra';
     else if (/BYD|K9/i.test(m)) f = 'byd';
     else f = len >= 17 ? 'novaArtic' : 'nova'; // Nova LFS / LFSe+ and anything unknown (e.g. YRT)
-    const brand = v.agency === 'YRT' ? '#1d63b8' : null; // YRT: blue lower body (approximate livery); TTC keeps red
-    return { family: f, prop, brand, ...FAMILIES[f], key: `${f}|${prop}|${brand ? 'yrt' : 'ttc'}` };
+    const brand = v.brand || (v.agency === 'YRT' ? '#1d63b8' : v.agency === 'GO' ? '#00853f' : null); // YRT: blue lower body (approximate livery); TTC keeps red
+    return { family: f, prop, brand, ...FAMILIES[f], key: `${f}|${prop}|${brand || 'ttc'}` };
   }
 
   // ---- geometry collector with baked flat shading ---------------------------------------------------------------------
@@ -164,7 +164,7 @@
       if (p.z < zb + 0.2) return C.skirt;
       if (n.z > 0.5 && p.z > H - 0.45) return C.roof;                                 // white roof
       if (p.z > H - 0.35) return C.white;
-      return S.tramRed || C.red;
+      return S.tramRed || S.brand || C.red;
     };
     const livery = tram ? tramLivery : busLivery;
 

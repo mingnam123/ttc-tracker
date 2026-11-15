@@ -99,6 +99,7 @@
   <div style="margin-top:8px;display:flex;gap:14px">
     <label style="cursor:pointer"><input type="checkbox" id="showBus" checked style="width:auto;margin:0 6px 0 0;vertical-align:middle">Buses</label>
     <label style="cursor:pointer"><input type="checkbox" id="showTram" checked style="width:auto;margin:0 6px 0 0;vertical-align:middle">Streetcars</label>
+    <label style="cursor:pointer"><input type="checkbox" id="showTrain" checked style="width:auto;margin:0 6px 0 0;vertical-align:middle">Trains</label>
   </div>
   <button id="mode">Switch to 3D</button>
   <div id="rname"></div>
@@ -137,7 +138,7 @@ let lastUpdated = null, colorMode = 'type', is3D = false, ready = false, hasStat
 
 const TRAIL_POINTS = 5, TRAIL_MS = 180000, MOVE_MIN_M = 8;
 let trailsOn = true, tipFrame = 0;
-const typeOn = { bus: true, streetcar: true };
+const typeOn = { bus: true, streetcar: true, train: true };
 let idTrust = {}; // agency -> do the feed's vehicle ids behave like fleet numbers? (see refresh)
 const lerp = (a, b, t) => a + (b - a) * t;
 const bearingBetween = (a, b) => (Math.atan2((b[0] - a[0]) * Math.cos(b[1] * Math.PI / 180), b[1] - a[1]) * 180 / Math.PI + 360) % 360;
@@ -193,7 +194,25 @@ function colorOf(v) {
     if (o == null || o > 5) return GREY;
     return o <= 1 ? '#2fbf71' : o === 2 ? '#e6d44a' : o === 3 ? '#f5a623' : '#e5392b';
   }
-  return v.kind === 'streetcar' ? '#da291c' : v.agency === 'YRT' ? '#14b8a6' : v.agency === 'GO' ? '#00a651' : v.kind === 'bus' ? '#2b8cff' : '#b0a0d0';
+  return v.kind === 'streetcar' ? '#da291c' : v.agency === 'YRT' ? '#14b8a6' : v.agency === 'GO' ? goColor(v) : v.kind === 'bus' ? '#2b8cff' : '#b0a0d0';
+}
+// GO line colour: the route_color from GO's schedule data once it has been built; otherwise the rail line colours below (from memory,
+// approximate) and, for bus lines, a stable colour derived from the line number so each line at least looks different.
+const GO_RAIL = { LW: '#98002e', LE: '#ee3124', MI: '#f57f25', GT: '#00853e', KI: '#00853e', BR: '#0067b1', RH: '#00a1de', ST: '#794500' };
+const goCache = new Map();
+function goColor(v) {
+  const i = info(v.route);
+  if (i?.c) return i.c;
+  const code = String(v.route ?? '').split(':').pop().trim().toUpperCase();
+  if (GO_RAIL[code]) return GO_RAIL[code];
+  if (v.kind === 'train') return '#00853f';
+  if (!goCache.has(code)) {
+    let n = parseInt(code, 10); if (!Number.isFinite(n)) { n = 7; for (const ch of code) n = (n * 31 + ch.charCodeAt(0)) % 1000; }
+    const h = (n * 137.508) % 360;                         // golden-angle steps: neighbouring line numbers get clearly different hues
+    const sat = 0.55, lum = 0.45, a = sat * Math.min(lum, 1 - lum), f = n => { const k = (n + h / 30) % 12; return Math.round((lum - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255).toString(16).padStart(2, '0'); };   // hsl(h, 55%, 45%) as hex
+    goCache.set(code, '#' + f(0) + f(8) + f(4));
+  }
+  return goCache.get(code);
 }
 
 const BUS_SVG = '<svg width="14" height="14" viewBox="0 0 48 48" style="vertical-align:middle;margin-right:6px"><polygon points="24,3 40,42 24,33 8,42" fill="#ccd" stroke="#111" stroke-width="3"/></svg>';
@@ -235,7 +254,7 @@ async function refresh() {
         hist: !prev ? [] : metres(prev.to, pos) > MOVE_MIN_M
           ? [...prev.hist, [prev.cur[0], prev.cur[1], Date.now()]].slice(-TRAIL_POINTS) : prev.hist,
         m: 0, agency: v.agency, trip: v.trip,
-        bearing, route: v.route, speed: v.speed, delay: v.delay, occ: v.occ, model: v.model,
+        bearing, route: v.route, speed: v.speed, speedEst: v.speedEst, delay: v.delay, occ: v.occ, model: v.model, dest: v.dest,
         kind: v.type && idTrust[v.agency] !== false ? v.type : kindOf(v.route) === 'streetcar' ? 'streetcar' : 'bus',
       });
     }
@@ -307,7 +326,7 @@ const modelLayer = {
     this.P = new T.Matrix4(); this.A = new T.Matrix4(); this.B = new T.Matrix4(); this.C = new T.Matrix4();
   },
   geometryFor(v) {
-    const spec = VehicleModels.specFor(v);
+    const spec = VehicleModels.specFor(v.agency === 'GO' ? { ...v, brand: goColor(v) } : v);
     let g = this.geoms.get(spec.key);
     if (!g) this.geoms.set(spec.key, g = VehicleModels.build(THREE, spec));
     return g;
@@ -375,11 +394,12 @@ function render() {
       const t = Math.min((nowP - v.t0) / POLL_MS, 1);
       v.cur = [lerp(v.from[0], v.to[0], t), lerp(v.from[1], v.to[1], t)];
       if (!matches(v)) continue;
-      const i = info(v.route);
+      const i = info(v.route), vc = colorOf(v);
+      if (v.agency === 'GO') mkIcons(vc);
       features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: v.cur },
         properties: { id, agency: v.agency, route: i?.s ?? String(v.route).split(':').pop(), name: i?.l ?? '', bearing: v.bearing ?? 0, hasB: v.bearing == null ? 0 : 1, speed: v.speed,
-                      delay: v.delay, model: v.model || '', color: colorOf(v), type: v.kind, dr: v.kind === 'streetcar' ? 1.6 : 1,
-                      icon: (v.kind === 'streetcar' ? 'tram' : 'arrow') + colorOf(v) } });
+                      delay: v.delay, model: v.model || '', color: colorOf(v), type: v.kind, dr: v.kind === 'streetcar' || v.kind === 'train' ? 1.6 : 1,
+                      icon: (v.kind === 'streetcar' || v.kind === 'train' ? 'tram' : 'arrow') + colorOf(v) } });
     }
     if ((tipFrame++ & 1) === 0) {
       if (trailsOn) for (const v of vehicles.values()) {
@@ -410,7 +430,12 @@ function addRouteArrow() { // white chevron pointing right (line-placement icons
 function addArrows() {
   addRouteArrow();
   const s = 48;
-  for (const col of ARROW_COLORS) {
+  for (const col of ARROW_COLORS) mkIcons(col);
+}
+function mkIcons(col) {                                   // arrow + streetcar/train icon in one colour (also made on demand for GO line colours)
+  if (map.hasImage('arrow' + col)) return;
+  const s = 48;
+  {
     const c = document.createElement('canvas'); c.width = c.height = s;
     const g = c.getContext('2d');
     g.fillStyle = col; g.strokeStyle = '#111'; g.lineWidth = 2; g.beginPath();
@@ -449,9 +474,9 @@ async function loadStatic() {
     // Geometry of the selected / filtered route, loaded on demand from /data/route/<AGENCY>_<route>.json
     map.addSource('route-sel', { type: 'geojson', data: EMPTY });
     map.addLayer({ id: 'route-case', type: 'line', source: 'route-sel', layout: { 'line-join': 'round', 'line-cap': 'round' },
-      paint: { 'line-color': '#fff', 'line-opacity': 0.95, 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 6, 13, 10, 17, 17] } });
+      paint: { 'line-color': ['coalesce', ['get', 'cc'], '#fff'], 'line-opacity': 0.95, 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 6, 13, 10, 17, 17] } });
     map.addLayer({ id: 'route-line', type: 'line', source: 'route-sel', layout: { 'line-join': 'round', 'line-cap': 'round' },
-      paint: { 'line-color': '#1f8a4c', 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3, 13, 5.5, 17, 10] } });
+      paint: { 'line-color': ['coalesce', ['get', 'c'], '#1f8a4c'], 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3, 13, 5.5, 17, 10] } });
     map.addLayer({ id: 'route-arrows', type: 'symbol', source: 'route-sel', layout: {
       'symbol-placement': 'line', 'symbol-spacing': 60, 'icon-image': 'route-arrow', 'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true, 'icon-ignore-placement': true,
@@ -536,15 +561,16 @@ function cardHTML(id, v) {
       <button data-alert="${esc(id)}" style="margin-top:5px;border:1px solid #e3a9a4;background:#fff;color:#a3281e;border-radius:12px;padding:2px 10px;font-weight:700;cursor:pointer;font-size:11px">Alert details</button></div>` : '';
   return `<div class="hd" style="background:${col};color:${fg}">${esc(v.agency)} ${esc(rt)}${name ? ' ' + esc(name) : ''}</div>${banner}<div class="bd">` +
     row('Vehicle ID', esc(String(id).split(':').pop())) +
-    row('Type', v.kind === 'streetcar' ? 'Streetcar' : 'Bus') +
+    row('Type', v.kind === 'streetcar' ? 'Streetcar' : v.kind === 'train' ? 'Train' : 'Bus') +
+    (v.dest ? row('Heading to', esc(v.dest)) : '') +
     (v.model ? (([n, ...rest]) => row('Model', esc(n)) + (rest.length ? `<div style="text-align:right;color:#889;font-size:11px">${esc(rest.join(' · '))}</div>` : ''))(v.model.split(' · ')) : '') +
-    row('Speed', v.speed == null ? 'n/a' : (v.speed * 3.6).toFixed(1) + ' km/h') +
+    row('Speed', v.speed == null ? 'n/a' : (v.speed * 3.6).toFixed(0) + ' km/h' + (v.speedEst ? ' <span style="color:#889;font-size:11px" title="Worked out from the vehicle\'s last two positions">(est.)</span>' : '')) +
     row('Occupancy', o ? `<span class="badge" style="background:${o[1]}22;color:${o[1]}">${o[0]}</span>` : 'n/a') +
     row('Schedule', delayText(v.delay)) +
     (selMissing ? '<div style="margin-top:6px;color:#a3281e;font-size:11px">No route line for this route in the static data. Re-run: npm run build-data</div>' : '') + '</div>';
 }
 const luma = h => { const n = parseInt(String(h).replace('#', ''), 16) || 0; return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; };
-const colorOf0 = v => v.kind === 'streetcar' ? '#c8281d' : v.agency === 'YRT' ? '#0f9488' : v.agency === 'GO' ? '#00853f' : '#2468c9'; // header colour: by type, not by the colour mode
+const colorOf0 = v => v.kind === 'streetcar' ? '#c8281d' : v.agency === 'YRT' ? '#0f9488' : v.agency === 'GO' ? goColor(v) : '#2468c9'; // header colour: by type, not by the colour mode
 function selectVehicle(id) {
   const v = vehicles.get(id);
   if (!v) return;
@@ -672,10 +698,15 @@ async function updateRoute(fit) {
   const my = ++routeReq, want = wantedRoutes();
   const files = await Promise.all(want.map(([a, k]) => loadRouteFile(a, k)));
   if (my !== routeReq) return; // a newer selection superseded this one
-  let feats = files.flatMap(f => f?.features ?? []);
+  const tint = (a, k) => {                              // line colour = the route's own colour (route_color), dark outline when it is very light
+    const rec = Object.values(routes).find(r => r.a === a && kOf(r) === k);
+    const c = rec?.c || (a === 'GO' ? goColor({ route: `GO:${k}`, kind: 'bus' }) : '#1f8a4c');
+    return { c, cc: luma(c) > 0.78 ? '#333333' : '#ffffff' };
+  };
+  let feats = files.flatMap((f, n) => (f?.features ?? []).map(ft => ({ ...ft, properties: { ...ft.properties, ...tint(...want[n]) } })));
   if (want.length && !feats.length) { // route files not built yet: fall back to the overview line of the route
     feats = want.flatMap(([a, k]) => map.querySourceFeatures('lines', { filter: ['all', ['==', ['get', 'a'], a],
-      ['==', ['coalesce', ['get', 'k'], ['downcase', ['get', 's']]], k]] }));
+      ['==', ['coalesce', ['get', 'k'], ['downcase', ['get', 's']]], k]] }).map(ft => ({ type: 'Feature', geometry: ft.geometry, properties: { ...ft.properties, ...tint(a, k) } })));
   }
   map.getSource('route-sel').setData({ type: 'FeatureCollection', features: feats });
   map.setPaintProperty('lines', 'line-opacity', want.length ? 0.1 : 0.35);
@@ -872,7 +903,7 @@ function updateNearby() {
   const live = new Map(), by = {};
   for (const v of vehicles.values()) {
     if (metres(nearPt, v.cur) > nearR) continue;
-    const kk = `${v.agency} ${v.kind === 'streetcar' ? 'streetcar' : 'bus'}`; by[kk] = (by[kk] || 0) + 1;
+    const kk = `${v.agency} ${v.kind === 'streetcar' ? 'streetcar' : v.kind === 'train' ? 'train' : 'bus'}`; by[kk] = (by[kk] || 0) + 1;
   }
   for (const v of vehicles.values()) {                                                // vehicles running on the route anywhere, and the closest one to you
     const kk = `${v.agency} ${shortOf(v)}`, d = metres(nearPt, v.cur), e = live.get(kk) ?? { n: 0, d: Infinity, pos: null };
@@ -920,6 +951,7 @@ document.getElementById('route').addEventListener('input', e => { fq = parseFilt
 document.getElementById('color').addEventListener('change', e => { colorMode = e.target.value; renderLegend(); rebuildHist(); });
 document.getElementById('showBus').addEventListener('change', e => { typeOn.bus = e.target.checked; rebuildHist(); });
 document.getElementById('showTram').addEventListener('change', e => { typeOn.streetcar = e.target.checked; rebuildHist(); });
+document.getElementById('showTrain').addEventListener('change', e => { typeOn.train = e.target.checked; rebuildHist(); });
 document.getElementById('trails').addEventListener('change', e => { trailsOn = e.target.checked; rebuildHist(); });
 setInterval(rebuildHist, 5000);
 loadAlerts(); setInterval(loadAlerts, 60000);
@@ -950,10 +982,10 @@ setInterval(() => {
   if (!ready) return;
   try {
     const n = map.queryRenderedFeatures({ layers: ['veh-dot'] }).length;
-    let tram = 0, bus = 0;
-    for (const v of vehicles.values()) v.kind === 'streetcar' ? tram++ : bus++;
+    let tram = 0, bus = 0, train = 0;
+    for (const v of vehicles.values()) v.kind === 'streetcar' ? tram++ : v.kind === 'train' ? train++ : bus++;
     const bad = Object.entries(idTrust).filter(([, ok]) => ok === false).map(([a]) => a);
-    document.getElementById('dbg').textContent = `zoom ${map.getZoom().toFixed(1)} · ${n} drawn in view\n${tram} streetcars · ${bus} buses`
+    document.getElementById('dbg').textContent = `zoom ${map.getZoom().toFixed(1)} · ${n} drawn in view\n${tram} streetcars · ${bus} buses${train ? ` · ${train} trains` : ''}`
       + (bad.length ? `\n${bad.join(', ')}: vehicle ids don't look like fleet numbers, typing by route instead` : '');
   } catch (e) { document.getElementById('dbg').textContent = 'draw check failed: ' + e.message; }
 }, 2000);
